@@ -8,7 +8,7 @@ const (
 	Healthy   Status = "healthy"
 	Degraded  Status = "degraded"
 	Unhealthy Status = "unhealthy"
-	Unkown    Status = "unkown"
+	Unknown   Status = "unknown"
 )
 
 type HealthMetrics struct {

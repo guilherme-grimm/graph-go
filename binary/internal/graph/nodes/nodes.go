@@ -1,20 +1,24 @@
 package nodes
 
-import "github.com/google/uuid"
-
 type NodeType string
 
 const (
-	TypePostgres NodeType = "postgres"
-	TypeMongodb  NodeType = "mongodb"
-	TypeRedis    NodeType = "redis"
-	TypeS3       NodeType = "s3"
+	TypePostgres   NodeType = "postgres"
+	TypeMongodb    NodeType = "mongodb"
+	TypeRedis      NodeType = "redis"
+	TypeS3         NodeType = "s3"
+	TypeDatabase   NodeType = "database"
+	TypeTable      NodeType = "table"
+	TypeCollection NodeType = "collection"
+	TypeBucket     NodeType = "bucket"
+	TypeStorage    NodeType = "storage"
 )
 
 type Node struct {
-	Id       uuid.UUID
-	Type     string
-	Name     string
-	Parent   string
-	Metadata map[string]any
+	Id       string         `json:"id"`
+	Type     string         `json:"type"`
+	Name     string         `json:"name"`
+	Parent   string         `json:"parent,omitempty"`
+	Metadata map[string]any `json:"metadata"`
+	Health   string         `json:"health"`
 }

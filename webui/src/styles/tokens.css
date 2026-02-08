@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Background layers - warm neutral dark grays */
+  --bg-void: #0a0a0a;
+  --bg-primary: #111111;
+  --bg-secondary: #141414;
+  --bg-elevated: #171717;
+  --bg-surface: #1c1c1c;
+  --bg-interactive: #262626;
+
+  /* Accent - muted, functional */
+  --accent-primary: #888888;
+  --accent-highlight: #3b82f6;
+
+  /* Priority colors */
+  --priority-critical: #ef4444;
+  --priority-high: #f59e0b;
+  --priority-medium: #6b7280;
+  --priority-low: #4b5563;
+
+  /* Status colors */
+  --status-healthy: #22c55e;
+  --status-healthy-bg: rgba(34, 197, 94, 0.08);
+
+  --status-degraded: #f59e0b;
+  --status-degraded-bg: rgba(245, 158, 11, 0.08);
+
+  --status-unhealthy: #ef4444;
+  --status-unhealthy-bg: rgba(239, 68, 68, 0.08);
+
+  --status-unknown: #6b7280;
+  --status-unknown-bg: rgba(107, 114, 128, 0.08);
+
+  /* Text hierarchy */
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --text-muted: #737373;
+  --text-dim: #525252;
+
+  /* Border system */
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(59, 130, 246, 0.3);
+
+  /* Shadows - subtle depth */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  /* Transitions */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --transition-fast: 150ms var(--ease-out-expo);
+  --transition-normal: 250ms var(--ease-out-expo);
+  --transition-slow: 400ms var(--ease-out-expo);
+
+  /* Spacing - 4px base */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Border radius */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Typography - Inter + JetBrains Mono */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
+  --text-2xs: 0.625rem;   /* 10px */
+  --text-xs: 0.75rem;     /* 12px */
+  --text-sm: 0.8125rem;   /* 13px */
+  --text-base: 0.875rem;  /* 14px */
+  --text-lg: 1rem;        /* 16px */
+  --text-xl: 1.125rem;    /* 18px */
+  --text-2xl: 1.375rem;   /* 22px */
+  --text-3xl: 1.75rem;    /* 28px */
+  --text-4xl: 2.25rem;    /* 36px */
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+
+  /* Z-index layers */
+  --z-base: 0;
+  --z-nodes: 10;
+  --z-edges: 5;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  /* Node sizing - card-based */
+  --node-width: 180px;
+  --node-height: 64px;
+
+  /* Graph layout */
+  --graph-padding: 80px;
+  --edge-width: 1.5px;
+  --edge-width-active: 2px;
+}

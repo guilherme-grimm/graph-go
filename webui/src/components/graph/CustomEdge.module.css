@@ -1,0 +1,66 @@
+.edgeGroup {
+  transition: opacity var(--transition-normal);
+}
+
+.edge {
+  stroke: var(--border-default);
+  stroke-width: var(--edge-width);
+  fill: none;
+  transition:
+    stroke var(--transition-normal),
+    stroke-width var(--transition-fast);
+}
+
+.active {
+  stroke: var(--accent-highlight);
+  stroke-width: var(--edge-width-active);
+}
+
+.highlighted {
+  stroke: var(--accent-highlight);
+  stroke-width: var(--edge-width-active);
+}
+
+.dimmed {
+  opacity: 0.15;
+}
+
+.dimmedEdge {
+  stroke: var(--text-dim);
+}
+
+/* Edge labels */
+
+.labelBg {
+  fill: var(--bg-secondary);
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  transition: fill var(--transition-fast), stroke var(--transition-fast);
+}
+
+.labelBgActive {
+  fill: var(--bg-surface);
+  stroke: var(--border-default);
+}
+
+.labelText {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  fill: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.edgeGroup:hover .edge {
+  stroke: var(--text-muted);
+  stroke-width: var(--edge-width-active);
+}
+
+.edgeGroup:hover .labelBg {
+  fill: var(--bg-surface);
+  stroke: var(--border-default);
+}
+
+.edgeGroup:hover .labelText {
+  fill: var(--text-secondary);
+}

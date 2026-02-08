@@ -7,8 +7,10 @@ const router = createBrowserRouter([
     path: "/",
     element: <Home />,
   },
+  {
+    path: "/node/:nodeId",
+    element: <Home />,
+  },
 ]);
 
 export default router;
-
-  

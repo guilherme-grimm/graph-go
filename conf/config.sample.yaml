@@ -1,0 +1,28 @@
+# graph-info adapter configuration
+# Copy this file to config.yaml and fill in your connection details.
+
+connections:
+  # PostgreSQL
+  - name: postgres
+    type: postgres
+    dsn: "postgres://user:password@localhost:5432/mydb?sslmode=disable"
+
+  # MongoDB
+  - name: mongodb
+    type: mongodb
+    uri: "mongodb://user:password@localhost:27017"
+
+  # S3 (AWS)
+  - name: s3
+    type: s3
+    region: us-east-1
+    access_key_id: "AKIAIOSFODNN7EXAMPLE"
+    secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+  # S3-compatible (MinIO / LocalStack)
+  # - name: minio
+  #   type: s3
+  #   region: us-east-1
+  #   endpoint: "http://localhost:9000"
+  #   access_key_id: minioadmin
+  #   secret_access_key: minioadmin

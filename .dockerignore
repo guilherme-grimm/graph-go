@@ -1,0 +1,12 @@
+.git/
+node_modules/
+bin/
+webui/dist/
+webui/node_modules/
+*.db
+.env
+config.yaml
+.vscode/
+.idea/
+.DS_Store
+*.log

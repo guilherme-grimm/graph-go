@@ -1,0 +1,58 @@
+/* ═══════════════════════════════════════════════════════════════
+   PANEL - Slide-in container
+   ═══════════════════════════════════════════════════════════════ */
+
+.panel {
+  position: fixed;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-xl);
+  z-index: var(--z-overlay);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Right position (default) */
+.right {
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: var(--panel-width);
+  max-width: 90vw;
+  border-left: 1px solid var(--border-default);
+  border-top: none;
+  border-bottom: none;
+  border-right: none;
+  animation: slide-in-right 250ms var(--ease-out-expo) forwards;
+}
+
+/* Bottom position */
+.bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: auto;
+  max-height: 60vh;
+  border-top: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  animation: slide-in-up 250ms var(--ease-out-expo) forwards;
+}
+
+/* Mobile override - always bottom sheet */
+@media (max-width: 640px) {
+  .right {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    max-height: 75vh;
+    border-left: none;
+    border-top: 1px solid var(--border-default);
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    animation: slide-in-up 250ms var(--ease-out-expo) forwards;
+  }
+}

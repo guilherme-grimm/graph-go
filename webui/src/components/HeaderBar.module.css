@@ -1,0 +1,207 @@
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-5);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.appName {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+
+/* Search trigger */
+
+.searchTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  min-width: 240px;
+}
+
+.searchTrigger:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+}
+
+.searchIcon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.searchLabel {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  flex: 1;
+  text-align: left;
+}
+
+.searchKbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+/* Filter chips */
+
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.filterGroup::-webkit-scrollbar {
+  display: none;
+}
+
+.filterChip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 8px;
+  font-size: var(--text-2xs);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.filterChip:hover {
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.chipActive {
+  background: var(--bg-interactive);
+  border-color: var(--accent-highlight);
+  color: var(--accent-highlight);
+}
+
+.chipDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.chipDot_healthy {
+  background: var(--status-healthy);
+}
+
+.chipDot_degraded {
+  background: var(--status-degraded);
+}
+
+.chipDot_unhealthy {
+  background: var(--status-unhealthy);
+}
+
+.chipDot_unknown {
+  background: var(--status-unknown);
+}
+
+/* Health summary */
+
+.healthSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.healthBadge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dotHealthy {
+  background: var(--status-healthy);
+}
+
+.dotDegraded {
+  background: var(--status-degraded);
+}
+
+.dotUnhealthy {
+  background: var(--status-unhealthy);
+}
+
+.dotUnknown {
+  background: var(--status-unknown);
+}
+
+.totalCount {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-subtle);
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .searchTrigger {
+    min-width: auto;
+  }
+
+  .searchLabel {
+    display: none;
+  }
+
+  .searchKbd {
+    display: none;
+  }
+
+  .filterGroup {
+    display: none;
+  }
+
+  .totalCount {
+    display: none;
+  }
+}

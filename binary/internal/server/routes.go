@@ -4,40 +4,40 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-
-	"fmt"
+	"os"
+	"strings"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/gorilla/mux"
 
-	"github.com/coder/websocket"
+	"binary/internal/graph/health"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
 	r := mux.NewRouter()
 
-	// Apply CORS middleware
 	r.Use(s.corsMiddleware)
 
-	r.HandleFunc("/", s.HelloWorldHandler)
-
 	r.HandleFunc("/health", s.healthHandler)
+
+	// API routes
+	r.HandleFunc("/api/graph", s.graphHandler).Methods("GET")
+	r.HandleFunc("/api/node/{id}", s.nodeHandler).Methods("GET")
+	r.HandleFunc("/api/health", s.apiHealthHandler).Methods("GET")
 
 	r.HandleFunc("/websocket", s.websocketHandler)
 
 	return r
 }
 
-// CORS middleware
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// CORS Headers
-		w.Header().Set("Access-Control-Allow-Origin", "*") // Wildcard allows all origins
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Credentials", "false") // Credentials not allowed with wildcard origins
+		w.Header().Set("Access-Control-Allow-Credentials", "false")
 
-		// Handle preflight OPTIONS requests
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -47,35 +47,95 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) HelloWorldHandler(w http.ResponseWriter, r *http.Request) {
-	resp := make(map[string]string)
-	resp["message"] = "Hello World"
-
-	jsonResp, err := json.Marshal(resp)
-	if err != nil {
-		log.Fatalf("error handling JSON marshal. Err: %v", err)
-	}
-
-	_, _ = w.Write(jsonResp)
-}
-
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	jsonResp, err := json.Marshal(s.db.Health())
-
 	if err != nil {
-		log.Fatalf("error handling JSON marshal. Err: %v", err)
+		log.Printf("error handling JSON marshal. Err: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
-	_, _ = w.Write(jsonResp)
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(jsonResp); err != nil {
+		log.Printf("healthHandler: write error: %v", err)
+	}
+}
+
+func (s *Server) graphHandler(w http.ResponseWriter, r *http.Request) {
+	g, err := s.registry.DiscoverAll()
+	if err != nil {
+		log.Printf("graphHandler: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]any{"data": g}); err != nil {
+		log.Printf("graphHandler: encode error: %v", err)
+	}
+}
+
+func (s *Server) nodeHandler(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	g, err := s.registry.DiscoverAll()
+	if err != nil {
+		log.Printf("nodeHandler: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	for _, node := range g.Nodes {
+		if node.Id == id {
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{"data": node}); err != nil {
+				log.Printf("nodeHandler: encode error: %v", err)
+			}
+			return
+		}
+	}
+
+	http.Error(w, "node not found", http.StatusNotFound)
+}
+
+func (s *Server) apiHealthHandler(w http.ResponseWriter, r *http.Request) {
+	status := "ok"
+
+	metrics := s.registry.HealthAll()
+	for _, m := range metrics {
+		if m.Status == health.Unhealthy {
+			status = "error"
+			break
+		}
+		if m.Status == health.Degraded {
+			status = "degraded"
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"status":    status,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}); err != nil {
+		log.Printf("apiHealthHandler: encode error: %v", err)
+	}
 }
 
 func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
-	socket, err := websocket.Accept(w, r, nil)
+	origins := os.Getenv("WS_ALLOWED_ORIGINS")
+	if origins == "" {
+		origins = "*"
+	}
+	patterns := strings.Split(origins, ",")
+	for i := range patterns {
+		patterns[i] = strings.TrimSpace(patterns[i])
+	}
 
+	socket, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: patterns,
+	})
 	if err != nil {
 		log.Printf("could not open websocket: %v", err)
-		_, _ = w.Write([]byte("could not open websocket"))
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
@@ -85,11 +145,50 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 	socketCtx := socket.CloseRead(ctx)
 
 	for {
-		payload := fmt.Sprintf("server timestamp: %d", time.Now().UnixNano())
-		err := socket.Write(socketCtx, websocket.MessageText, []byte(payload))
+		// Get the current graph to map adapter health to actual node IDs
+		g, err := s.registry.DiscoverAll()
 		if err != nil {
-			break
+			log.Printf("websocket: discover error: %v", err)
 		}
-		time.Sleep(time.Second * 2)
+
+		metrics := s.registry.HealthAll()
+
+		// Build a lookup from adapter name to its health status.
+		adapterHealth := make(map[string]string, len(metrics))
+		for _, m := range metrics {
+			adapterHealth[m.NodeID] = string(m.Status)
+		}
+
+		// Send a health update for each node, using the health of its
+		// owning adapter (matched via node.Metadata["adapter"]).
+		if g != nil {
+			for _, node := range g.Nodes {
+				adapterName, _ := node.Metadata["adapter"].(string)
+				healthStr, ok := adapterHealth[adapterName]
+				if !ok {
+					continue
+				}
+				msg := map[string]any{
+					"type": "health_update",
+					"payload": map[string]any{
+						"nodeId": node.Id,
+						"health": healthStr,
+					},
+				}
+				data, jsonErr := json.Marshal(msg)
+				if jsonErr != nil {
+					continue
+				}
+				if err := socket.Write(socketCtx, websocket.MessageText, data); err != nil {
+					return
+				}
+			}
+		}
+
+		select {
+		case <-socketCtx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
 	}
 }

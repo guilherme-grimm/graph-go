@@ -1,1 +1,20 @@
 config.yaml
+.env
+*.db
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+binary/bin/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
