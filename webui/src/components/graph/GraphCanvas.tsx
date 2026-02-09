@@ -18,8 +18,10 @@ import '@xyflow/react/dist/style.css';
 import CustomNode, { type CustomNodeData } from './CustomNode';
 import CustomEdge, { type CustomEdgeData } from './CustomEdge';
 import { EmptyState } from '../ui';
-import type { Graph, GraphNode, GraphEdge } from '../../types';
-import { calculatePriority, countConnections } from '../../utils';
+import type { Graph, GraphEdge } from '../../types';
+import { calculatePriority, countConnections, calculateHierarchicalLayout, calculateForceDirectedLayout, debounce } from '../../utils';
+import { useLayoutPersistence } from '../../hooks';
+import type { LayoutMode } from '../HeaderBar';
 import styles from './GraphCanvas.module.css';
 
 const nodeTypes: NodeTypes = {
@@ -35,6 +37,7 @@ interface GraphCanvasProps {
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string | null) => void;
   onEdgeClick?: (edge: GraphEdge) => void;
+  layoutMode: LayoutMode;
   isLoading?: boolean;
   error?: Error | null;
 }
@@ -52,78 +55,28 @@ function getConnectedNodeIds(nodeId: string, edges: GraphEdge[]) {
   return { sources, targets, all };
 }
 
-// Hierarchical layout: assign ranks via longest-path, then space nodes within each rank.
-function calculateHierarchicalLayout(graph: Graph): Map<string, { x: number; y: number }> {
-  const NODE_W = 180;
-  const NODE_H = 64;
-  const GAP_X = 40;
-  const GAP_Y = 80;
-
-  const nodeIds = new Set(graph.nodes.map(n => n.id));
-  const children = new Map<string, string[]>();
-  const parents = new Map<string, string[]>();
-
-  for (const id of nodeIds) {
-    children.set(id, []);
-    parents.set(id, []);
-  }
-
-  for (const edge of graph.edges) {
-    if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
-      children.get(edge.source)!.push(edge.target);
-      parents.get(edge.target)!.push(edge.source);
-    }
-  }
-
-  // Assign ranks using longest-path from roots (nodes with no incoming edges)
-  const rank = new Map<string, number>();
-
-  function assignRank(id: string): number {
-    if (rank.has(id)) return rank.get(id)!;
-    const pars = parents.get(id)!;
-    const r = pars.length === 0 ? 0 : Math.max(...pars.map(assignRank)) + 1;
-    rank.set(id, r);
-    return r;
-  }
-
-  for (const id of nodeIds) assignRank(id);
-
-  // Group nodes by rank
-  const ranks = new Map<number, GraphNode[]>();
-  for (const node of graph.nodes) {
-    const r = rank.get(node.id) ?? 0;
-    if (!ranks.has(r)) ranks.set(r, []);
-    ranks.get(r)!.push(node);
-  }
-
-  // Position: center each rank row horizontally
-  const positions = new Map<string, { x: number; y: number }>();
-  const sortedRanks = [...ranks.keys()].sort((a, b) => a - b);
-
-  for (const r of sortedRanks) {
-    const nodesInRank = ranks.get(r)!;
-    const totalWidth = nodesInRank.length * NODE_W + (nodesInRank.length - 1) * GAP_X;
-    const startX = -totalWidth / 2;
-
-    nodesInRank.forEach((node, i) => {
-      positions.set(node.id, {
-        x: startX + i * (NODE_W + GAP_X),
-        y: r * (NODE_H + GAP_Y),
-      });
-    });
-  }
-
-  return positions;
-}
-
 function transformGraphToFlow(
   graph: Graph,
-  selectedNodeId: string | null
+  layoutMode: LayoutMode,
+  savedPositions: Map<string, { x: number; y: number; isPinned?: boolean }>,
+  selectedNodeId: string | null,
+  viewportSize: { width: number; height: number }
 ): {
   nodes: Node<CustomNodeData>[];
   edges: Edge<CustomEdgeData>[];
 } {
-  const positions = calculateHierarchicalLayout(graph);
+  // Calculate base layout positions
+  const basePositions = layoutMode === 'hierarchical'
+    ? calculateHierarchicalLayout(graph)
+    : calculateForceDirectedLayout(graph, viewportSize);
+
+  // Merge with saved positions (pinned nodes override calculated positions)
+  const finalPositions = new Map(basePositions);
+  savedPositions.forEach((pos, nodeId) => {
+    if (pos.isPinned && basePositions.has(nodeId)) {
+      finalPositions.set(nodeId, { x: pos.x, y: pos.y });
+    }
+  });
 
   const connectedInfo = selectedNodeId
     ? getConnectedNodeIds(selectedNodeId, graph.edges)
@@ -132,7 +85,8 @@ function transformGraphToFlow(
   const nodes: Node<CustomNodeData>[] = graph.nodes.map(node => {
     const connectionCount = countConnections(node.id, graph.edges);
     const priority = calculatePriority(node, connectionCount);
-    const position = positions.get(node.id) || { x: 0, y: 0 };
+    const position = finalPositions.get(node.id) || { x: 0, y: 0 };
+    const savedPos = savedPositions.get(node.id);
 
     let isConnected: boolean | undefined;
     let isSource = false;
@@ -159,6 +113,7 @@ function transformGraphToFlow(
         isConnected,
         isSource,
         isTarget,
+        isPinned: savedPos?.isPinned || false,
       },
     };
   });
@@ -194,17 +149,22 @@ function GraphCanvasInner({
   selectedNodeId,
   onNodeSelect,
   onEdgeClick,
+  layoutMode,
   isLoading,
   error,
 }: GraphCanvasProps) {
   const { fitView } = useReactFlow();
   const prevNodeCountRef = useRef(0);
+  const { savedPositions, savePosition } = useLayoutPersistence(graph);
+
+  // Use a fixed viewport size for force-directed layout
+  const viewportSize = { width: 1200, height: 800 };
 
   const { flowNodes, flowEdges } = useMemo(() => {
     if (!graph?.nodes) return { flowNodes: [], flowEdges: [] };
-    const { nodes, edges } = transformGraphToFlow(graph, selectedNodeId);
+    const { nodes, edges } = transformGraphToFlow(graph, layoutMode, savedPositions, selectedNodeId, viewportSize);
     return { flowNodes: nodes, flowEdges: edges };
-  }, [graph, selectedNodeId]);
+  }, [graph, layoutMode, savedPositions, selectedNodeId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
@@ -249,6 +209,22 @@ function GraphCanvasInner({
     onNodeSelect(null);
   }, [onNodeSelect]);
 
+  // Debounced save position handler
+  const debouncedSavePosition = useMemo(
+    () => debounce((...args: unknown[]) => {
+      const [nodeId, position] = args as [string, { x: number; y: number }];
+      savePosition(nodeId, position, true);
+    }, 500),
+    [savePosition]
+  );
+
+  const handleNodeDragStop = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      debouncedSavePosition(node.id, node.position);
+    },
+    [debouncedSavePosition]
+  );
+
   if (error) {
     return (
       <div className={styles.loading}>
@@ -291,6 +267,7 @@ function GraphCanvasInner({
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
+        onNodeDragStop={handleNodeDragStop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView

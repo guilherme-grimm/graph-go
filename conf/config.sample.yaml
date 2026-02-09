@@ -1,28 +1,172 @@
-# graph-info adapter configuration
+# graph-info Adapter Configuration
+#
+# This file defines the data sources that graph-info will connect to and visualize.
 # Copy this file to config.yaml and fill in your connection details.
+#
+# IMPORTANT: This tool is intended for authorized infrastructure visualization and
+# monitoring. Only configure connections to systems you own or have permission to access.
 
 connections:
-  # PostgreSQL
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PostgreSQL Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Discovers databases, tables, and foreign key relationships.
+  #
+  # Required fields:
+  #   - name: Unique identifier for this connection (used in node IDs and logs)
+  #   - type: Must be "postgres"
+  #   - dsn:  PostgreSQL connection string (format: postgres://user:pass@host:port/db?options)
+  #
+  # The adapter will:
+  #   - Create a database node
+  #   - Discover all tables in the "public" schema
+  #   - Map foreign key relationships as edges
+  #
   - name: postgres
     type: postgres
     dsn: "postgres://user:password@localhost:5432/mydb?sslmode=disable"
+    # Options in DSN:
+    #   sslmode: disable, require, verify-ca, verify-full
+    #   connect_timeout: Connection timeout in seconds
+    #   application_name: Name shown in pg_stat_activity
 
-  # MongoDB
+  # ─────────────────────────────────────────────────────────────────────────────
+  # MongoDB Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Discovers databases and collections (excludes system databases: admin, config, local).
+  #
+  # Required fields:
+  #   - name: Unique identifier for this connection
+  #   - type: Must be "mongodb"
+  #   - uri:  MongoDB connection URI (format: mongodb://user:pass@host:port[,host2:port2])
+  #
+  # The adapter will:
+  #   - List all non-system databases
+  #   - Discover collections within each database
+  #   - Create "contains" edges between databases and collections
+  #
   - name: mongodb
     type: mongodb
     uri: "mongodb://user:password@localhost:27017"
+    # URI options:
+    #   authSource: Authentication database (default: admin)
+    #   replicaSet: Replica set name for clustered deployments
+    #   tls: Enable TLS (true/false)
+    #   connectTimeoutMS: Connection timeout in milliseconds
 
-  # S3 (AWS)
+  # ─────────────────────────────────────────────────────────────────────────────
+  # S3 / AWS Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Discovers S3 buckets and top-level prefixes (folders).
+  #
+  # Required fields:
+  #   - name: Unique identifier for this connection
+  #   - type: Must be "s3"
+  #   - region: AWS region (e.g., us-east-1, eu-west-1)
+  #   - access_key_id: AWS access key ID (or use IAM role if running on EC2/ECS)
+  #   - secret_access_key: AWS secret access key
+  #
+  # The adapter will:
+  #   - List all S3 buckets
+  #   - Discover top-level prefixes (using "/" delimiter)
+  #   - Create "contains" edges between buckets and prefixes
+  #
   - name: s3
     type: s3
     region: us-east-1
     access_key_id: "AKIAIOSFODNN7EXAMPLE"
     secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    # Optional: Leave credentials empty to use IAM role (EC2, ECS, Lambda)
 
-  # S3-compatible (MinIO / LocalStack)
+  # ─────────────────────────────────────────────────────────────────────────────
+  # MinIO / S3-Compatible Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Same as S3 adapter, but with a custom endpoint for S3-compatible services.
+  #
+  # Required fields:
+  #   - name: Unique identifier for this connection
+  #   - type: Must be "s3"
+  #   - region: Region (can be any value for MinIO, e.g., us-east-1)
+  #   - endpoint: HTTP(S) URL to the S3-compatible service (e.g., http://localhost:9000)
+  #   - access_key_id: Access key for MinIO/S3-compatible service
+  #   - secret_access_key: Secret key for MinIO/S3-compatible service
+  #
+  # Use this for:
+  #   - MinIO (self-hosted S3-compatible object storage)
+  #   - LocalStack (local AWS emulator)
+  #   - Ceph RADOS Gateway
+  #   - Any other S3-compatible service
+  #
   # - name: minio
   #   type: s3
   #   region: us-east-1
   #   endpoint: "http://localhost:9000"
   #   access_key_id: minioadmin
   #   secret_access_key: minioadmin
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # HTTP / Application Service Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Monitors any HTTP service with a health endpoint and maps its dependencies
+  # to infrastructure nodes already discovered by other adapters.
+  #
+  # Required fields:
+  #   - name: Unique identifier (becomes the node ID in the graph)
+  #   - type: Must be "http"
+  #   - endpoint: Base URL of the service (e.g., http://my-service:8080)
+  #
+  # Optional fields:
+  #   - health_path: Path to health endpoint (default: /health)
+  #   - node_type: Visual node type — service, gateway, auth, api, queue, cache (default: service)
+  #   - depends_on: List of infrastructure node IDs this service connects to
+  #
+  # The adapter will:
+  #   - Ping the health endpoint on startup to verify reachability
+  #   - Create a single top-level node (no wrapper — the node IS the entity)
+  #   - Create "depends_on" edges to each target in depends_on
+  #   - Report health based on HTTP status: 2xx=healthy, 5xx=unhealthy, else=degraded
+  #
+  # - name: api-gateway
+  #   type: http
+  #   endpoint: "http://api-gateway:8080"
+  #   health_path: /health
+  #   node_type: gateway
+  #   depends_on:
+  #     - target: user-service
+  #       label: routes
+  #     - target: order-service
+  #       label: routes
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Usage Notes
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 1. Connection Names:
+#    - Must be unique across all connections
+#    - Used as node IDs (e.g., "service-postgres")
+#    - Appear in logs and error messages
+#
+# 2. Health Checks:
+#    - Each adapter pings its service every 5 seconds
+#    - Health status is streamed to the frontend via WebSocket
+#    - Status values: healthy, degraded, unhealthy
+#
+# 3. Caching:
+#    - Graph discovery results are cached for 30 seconds
+#    - Reduces load on databases and APIs
+#    - Cache is invalidated on adapter registration
+#
+# 4. Security:
+#    - Store credentials in environment variables for production
+#    - Use IAM roles instead of static credentials when possible
+#    - Never commit config.yaml with real credentials to version control
+#
+# 5. Troubleshooting:
+#    - Check logs for connection errors on startup
+#    - Verify network connectivity (firewalls, security groups)
+#    - Test connections manually before adding to config
+#
+# 6. Authorization:
+#    - Only configure connections to systems you own or have permission to access
+#    - This tool is designed for authorized infrastructure visualization
+#    - Respect security policies and access controls

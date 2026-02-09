@@ -13,15 +13,23 @@ type Config struct {
 	Connections []ConnectionEntry `yaml:"connections"`
 }
 
+type DependsOnEntry struct {
+	Target string `yaml:"target"`
+	Label  string `yaml:"label,omitempty"`
+}
+
 type ConnectionEntry struct {
-	Name            string `yaml:"name"`
-	Type            string `yaml:"type"`
-	DSN             string `yaml:"dsn,omitempty"`
-	URI             string `yaml:"uri,omitempty"`
-	Region          string `yaml:"region,omitempty"`
-	Endpoint        string `yaml:"endpoint,omitempty"`
-	AccessKeyID     string `yaml:"access_key_id,omitempty"`
-	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
+	Name            string           `yaml:"name"`
+	Type            string           `yaml:"type"`
+	DSN             string           `yaml:"dsn,omitempty"`
+	URI             string           `yaml:"uri,omitempty"`
+	Region          string           `yaml:"region,omitempty"`
+	Endpoint        string           `yaml:"endpoint,omitempty"`
+	AccessKeyID     string           `yaml:"access_key_id,omitempty"`
+	SecretAccessKey string           `yaml:"secret_access_key,omitempty"`
+	HealthPath      string           `yaml:"health_path,omitempty"`
+	NodeType        string           `yaml:"node_type,omitempty"`
+	DependsOn       []DependsOnEntry `yaml:"depends_on,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -62,6 +70,24 @@ func (e *ConnectionEntry) ToConnectionConfig() adapters.ConnectionConfig {
 		}
 		if e.SecretAccessKey != "" {
 			cfg["secret_access_key"] = e.SecretAccessKey
+		}
+	case "http":
+		if e.Endpoint != "" {
+			cfg["endpoint"] = e.Endpoint
+		}
+		if e.HealthPath != "" {
+			cfg["health_path"] = e.HealthPath
+		}
+		if e.NodeType != "" {
+			cfg["node_type"] = e.NodeType
+		}
+		cfg["name"] = e.Name
+		if len(e.DependsOn) > 0 {
+			deps := make([]map[string]string, len(e.DependsOn))
+			for i, d := range e.DependsOn {
+				deps[i] = map[string]string{"target": d.Target, "label": d.Label}
+			}
+			cfg["depends_on"] = deps
 		}
 	}
 

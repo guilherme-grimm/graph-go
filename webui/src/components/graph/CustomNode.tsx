@@ -12,6 +12,7 @@ export type CustomNodeData = Record<string, unknown> & {
   isConnected?: boolean;
   isSource?: boolean;
   isTarget?: boolean;
+  isPinned?: boolean;
 };
 
 type CustomNodeType = Node<CustomNodeData>;
@@ -106,14 +107,40 @@ const NodeIcon = ({ type }: { type: NodeType }) => {
         <rect x="14" y="14" width="6" height="6" rx="1" />
       </svg>
     ),
+    postgres: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <ellipse cx="12" cy="6" rx="8" ry="3" />
+        <path d="M4 6v6c0 1.657 3.582 3 8 3s8-1.343 8-3V6" />
+        <path d="M4 12v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6" />
+        <path d="M16 6v12" />
+        <path d="M16 14c2.5 0 4 1 4 3" />
+      </svg>
+    ),
+    mongodb: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 2C12 2 8 6 8 12s4 10 4 10" />
+        <path d="M12 2c0 0 4 4 4 10s-4 10-4 10" />
+        <path d="M12 2v20" />
+        <ellipse cx="12" cy="12" rx="4" ry="8" />
+      </svg>
+    ),
+    s3: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M4 7l2 13h12l2-13" />
+        <path d="M3 7h18" />
+        <path d="M8 7V5a4 4 0 018 0v2" />
+        <path d="M10 12h4" />
+        <path d="M10 15h4" />
+      </svg>
+    ),
   };
 
   return icons[type] || icons.service;
 };
 
 function CustomNode({ data, selected }: NodeProps<CustomNodeType>) {
-  const { name, type, health, priority, isConnected } = data;
-  const isDimmed = isConnected === false && !selected;
+  const { name, type, health, priority, isConnected, isPinned } = data;
+  const showGlow = isConnected && !selected;
   const showPriorityBorder = priority === 'critical' || priority === 'high';
 
   return (
@@ -121,12 +148,21 @@ function CustomNode({ data, selected }: NodeProps<CustomNodeType>) {
       className={`
         ${styles.node}
         ${selected ? styles.selected : ''}
-        ${isDimmed ? styles.dimmed : ''}
+        ${showGlow ? styles.glowing : ''}
         ${showPriorityBorder ? styles[`priority_${priority}`] : ''}
       `}
     >
       <Handle type="target" position={Position.Top} className={styles.handle} id="top" />
       <Handle type="source" position={Position.Bottom} className={styles.handle} id="bottom" />
+
+      {isPinned && (
+        <div className={styles.pinIcon} title="Position locked">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2v8m0 0l3-3m-3 3l-3-3" />
+            <path d="M16 12l-4 10-4-10h8z" />
+          </svg>
+        </div>
+      )}
 
       <div className={styles.card}>
         <span className={`${styles.healthDot} ${styles[`health_${health}`]}`} />

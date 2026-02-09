@@ -42,7 +42,7 @@ func NewServer(cfg *config.Config) (*http.Server, func()) {
 			}
 
 			connCfg := entry.ToConnectionConfig()
-			if err := reg.Register(entry.Name, adapter, connCfg); err != nil {
+			if err := reg.Register(entry.Name, entry.Type, adapter, connCfg); err != nil {
 				log.Printf("WARNING: failed to register %q adapter: %v", entry.Name, err)
 			} else {
 				log.Printf("%s adapter %q registered successfully", entry.Type, entry.Name)

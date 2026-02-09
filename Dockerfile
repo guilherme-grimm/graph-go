@@ -2,7 +2,7 @@
 FROM oven/bun:1 AS frontend-build
 WORKDIR /app
 COPY webui/package.json webui/bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install 
 COPY webui/ ./
 RUN bun run build
 

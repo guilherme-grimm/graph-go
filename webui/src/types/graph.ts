@@ -12,7 +12,10 @@ export type NodeType =
   | 'storage'
   | 'gateway'
   | 'payment'
-  | 'auth';
+  | 'auth'
+  | 'postgres'
+  | 'mongodb'
+  | 's3';
 
 // Priority tiers for visual hierarchy
 export type PriorityTier = 'critical' | 'high' | 'medium' | 'low';
@@ -25,6 +28,8 @@ export interface NodeMetadata {
   region?: string;
   version?: string;
   priority?: PriorityTier;
+  isExpanded?: boolean; // For collapsible containers
+  isPinned?: boolean; // For position locking
   [key: string]: unknown;
 }
 

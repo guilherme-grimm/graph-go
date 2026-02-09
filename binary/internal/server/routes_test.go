@@ -23,7 +23,7 @@ type mockRegistry struct {
 	discErr error
 }
 
-func (m *mockRegistry) Register(string, adapters.Adapter, adapters.ConnectionConfig) error {
+func (m *mockRegistry) Register(string, string, adapters.Adapter, adapters.ConnectionConfig) error {
 	return nil
 }
 func (m *mockRegistry) Get(string) (adapters.Adapter, bool) { return nil, false }

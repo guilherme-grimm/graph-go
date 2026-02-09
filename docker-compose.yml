@@ -6,7 +6,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./conf/config.yaml:/app/conf/config.yaml:ro
+      - ./conf/config.docker.yaml:/app/conf/config.yaml:ro
       - backend-data:/app/data
     depends_on:
       postgres:
@@ -14,6 +14,16 @@ services:
       mongo:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      api-gateway:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      media-service:
         condition: service_healthy
     networks:
       - graph-info
@@ -29,6 +39,75 @@ services:
     networks:
       - graph-info
 
+  # ── Mock application services ──────────────────────────────────────────
+
+  api-gateway:
+    build:
+      context: ./services/mock-service
+    environment:
+      SERVICE_NAME: api-gateway
+    healthcheck:
+      test: ["CMD", "/mock-service", "-health-check"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - graph-info
+
+  user-service:
+    build:
+      context: ./services/mock-service
+    environment:
+      SERVICE_NAME: user-service
+    healthcheck:
+      test: ["CMD", "/mock-service", "-health-check"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - graph-info
+
+  order-service:
+    build:
+      context: ./services/mock-service
+    environment:
+      SERVICE_NAME: order-service
+    healthcheck:
+      test: ["CMD", "/mock-service", "-health-check"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - graph-info
+
+  product-service:
+    build:
+      context: ./services/mock-service
+    environment:
+      SERVICE_NAME: product-service
+    healthcheck:
+      test: ["CMD", "/mock-service", "-health-check"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - graph-info
+
+  media-service:
+    build:
+      context: ./services/mock-service
+    environment:
+      SERVICE_NAME: media-service
+    healthcheck:
+      test: ["CMD", "/mock-service", "-health-check"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - graph-info
+
+  # ── Infrastructure ─────────────────────────────────────────────────────
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -39,6 +118,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U graphinfo -d mydb"]
       interval: 5s
@@ -56,6 +136,7 @@ services:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+      - ./docker/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
       interval: 5s
@@ -80,6 +161,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - graph-info
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./docker/init-minio.sh:/init-minio.sh:ro
+    entrypoint: /bin/sh
+    command: /init-minio.sh
     networks:
       - graph-info
 

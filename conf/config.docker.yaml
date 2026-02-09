@@ -2,6 +2,8 @@
 # Uses Compose service names as hostnames.
 
 connections:
+  # ── Infrastructure ─────────────────────────────────────────────────────
+
   - name: postgres
     type: postgres
     dsn: "postgres://graphinfo:graphinfo@postgres:5432/mydb?sslmode=disable"
@@ -16,3 +18,62 @@ connections:
     endpoint: "http://minio:9000"
     access_key_id: minioadmin
     secret_access_key: minioadmin
+
+  # ── Application Services ───────────────────────────────────────────────
+
+  - name: api-gateway
+    type: http
+    endpoint: "http://api-gateway:8080"
+    health_path: /health
+    node_type: gateway
+    depends_on:
+      - target: user-service
+        label: routes
+      - target: order-service
+        label: routes
+      - target: product-service
+        label: routes
+      - target: media-service
+        label: routes
+
+  - name: user-service
+    type: http
+    endpoint: "http://user-service:8080"
+    health_path: /health
+    node_type: auth
+    depends_on:
+      - target: pg-mydb-users
+        label: reads/writes
+
+  - name: order-service
+    type: http
+    endpoint: "http://order-service:8080"
+    health_path: /health
+    node_type: service
+    depends_on:
+      - target: pg-mydb-orders
+        label: reads/writes
+      - target: pg-mydb-order_items
+        label: reads/writes
+
+  - name: product-service
+    type: http
+    endpoint: "http://product-service:8080"
+    health_path: /health
+    node_type: service
+    depends_on:
+      - target: pg-mydb-products
+        label: reads/writes
+      - target: mongo-store-products
+        label: reads/writes
+      - target: mongo-store-categories
+        label: reads
+
+  - name: media-service
+    type: http
+    endpoint: "http://media-service:8080"
+    health_path: /health
+    node_type: service
+    depends_on:
+      - target: s3-assets
+        label: reads/writes

@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GraphCanvas } from './graph';
 import { NodeInspector, SearchOverlay, EdgeInspector } from './panels';
-import HeaderBar, { type Filters } from './HeaderBar';
+import HeaderBar, { type Filters, type LayoutMode } from './HeaderBar';
 import { ErrorBoundary } from './ui';
 import { useWebSocket, useAppShortcuts } from '../hooks';
 import { useGraph as useGraphData } from '../api';
@@ -18,9 +18,19 @@ export default function Layout() {
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>({ types: [], health: [] });
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(
+    () => (localStorage.getItem('graph-layout-mode') as LayoutMode) || 'hierarchical'
+  );
+
+  // Persist layout mode to localStorage
+  const handleLayoutChange = useCallback((mode: LayoutMode) => {
+    setLayoutMode(mode);
+    localStorage.setItem('graph-layout-mode', mode);
+  }, []);
 
   const { data: apiGraph, isLoading, error } = useGraphData();
-  const graph: Graph = apiGraph?.nodes ? apiGraph : MOCK_GRAPH;
+  const isMockData = !apiGraph?.nodes;
+  const graph: Graph = isMockData ? MOCK_GRAPH : apiGraph;
 
   useWebSocket();
 
@@ -87,7 +97,18 @@ export default function Layout() {
         onSearchOpen={() => setSearchOpen(true)}
         filters={filters}
         onFilterChange={setFilters}
+        layoutMode={layoutMode}
+        onLayoutChange={handleLayoutChange}
       />
+
+      {isMockData && !isLoading && (
+        <div className={styles.mockBanner}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={styles.mockIcon}>
+            <path d="M12 9v4m0 4h.01M12 2L2 22h20L12 2z" />
+          </svg>
+          <span>Displaying mock data — backend unavailable</span>
+        </div>
+      )}
 
       <div className={styles.graphArea}>
         <ErrorBoundary>
@@ -96,6 +117,7 @@ export default function Layout() {
             selectedNodeId={selectedNodeId}
             onNodeSelect={handleNodeSelect}
             onEdgeClick={handleEdgeClick}
+            layoutMode={layoutMode}
             isLoading={!apiGraph && isLoading}
             error={error instanceof Error ? error : error ? new Error(String(error)) : null}
           />

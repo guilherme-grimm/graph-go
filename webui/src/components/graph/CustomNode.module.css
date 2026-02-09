@@ -135,8 +135,26 @@
   color: var(--accent-highlight);
 }
 
-/* Dimmed */
-.dimmed {
-  opacity: 0.25;
-  filter: grayscale(0.5);
+/* Glowing (connected) */
+.glowing .card {
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.3);
+  border-color: var(--accent-highlight);
+}
+
+/* Pin icon */
+.pinIcon {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.pinIcon svg {
+  width: 100%;
+  height: 100%;
 }

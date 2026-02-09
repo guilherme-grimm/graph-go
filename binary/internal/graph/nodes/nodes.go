@@ -12,6 +12,12 @@ const (
 	TypeCollection NodeType = "collection"
 	TypeBucket     NodeType = "bucket"
 	TypeStorage    NodeType = "storage"
+	TypeService    NodeType = "service"
+	TypeApi        NodeType = "api"
+	TypeGateway    NodeType = "gateway"
+	TypeAuth       NodeType = "auth"
+	TypeQueue      NodeType = "queue"
+	TypeCache      NodeType = "cache"
 )
 
 type Node struct {

@@ -16,7 +16,7 @@ import (
 const defaultCacheTTL = 30 * time.Second
 
 type Registry interface {
-	Register(name string, adapter Adapter, config ConnectionConfig) error
+	Register(name string, connType string, adapter Adapter, config ConnectionConfig) error
 	Get(name string) (Adapter, bool)
 	Names() []string
 	DiscoverAll() (*graph.Graph, error)
@@ -28,6 +28,7 @@ type registry struct {
 	mu       sync.RWMutex
 	adapters map[string]Adapter
 	config   map[string]ConnectionConfig
+	types    map[string]string
 
 	cacheMu     sync.RWMutex
 	cachedGraph *graph.Graph
@@ -41,11 +42,12 @@ func NewRegistry() Registry {
 	return &registry{
 		adapters: make(map[string]Adapter),
 		config:   make(map[string]ConnectionConfig),
+		types:    make(map[string]string),
 		cacheTTL: defaultCacheTTL,
 	}
 }
 
-func (r *registry) Register(name string, adapter Adapter, config ConnectionConfig) error {
+func (r *registry) Register(name string, connType string, adapter Adapter, config ConnectionConfig) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -55,6 +57,7 @@ func (r *registry) Register(name string, adapter Adapter, config ConnectionConfi
 
 	r.adapters[name] = adapter
 	r.config[name] = config
+	r.types[name] = connType
 
 	r.invalidateCache()
 	return nil
@@ -107,10 +110,44 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 		allEdges := make([]edges.Edge, 0)
 
 		for name, adapter := range r.adapters {
+			connType := r.types[name]
+
 			n, e, err := adapter.Discover()
 			if err != nil {
 				return nil, fmt.Errorf("registry: discover failed for %q: %w", name, err)
 			}
+
+			if connType == "http" {
+				// HTTP adapters manage their own top-level node directly
+				allNodes = append(allNodes, n...)
+				allEdges = append(allEdges, e...)
+				continue
+			}
+
+			// Create a service-level parent node from config
+			serviceID := fmt.Sprintf("service-%s", name)
+			allNodes = append(allNodes, nodes.Node{
+				Id:       serviceID,
+				Type:     connType,
+				Name:     name,
+				Metadata: map[string]any{"adapter": name},
+				Health:   "healthy",
+			})
+
+			// Re-parent top-level nodes under the service node
+			for i := range n {
+				if n[i].Parent == "" {
+					n[i].Parent = serviceID
+					allEdges = append(allEdges, edges.Edge{
+						Id:     fmt.Sprintf("service-contains-%s-%s", name, n[i].Id),
+						Source: serviceID,
+						Target: n[i].Id,
+						Type:   "contains",
+						Label:  "contains",
+					})
+				}
+			}
+
 			allNodes = append(allNodes, n...)
 			allEdges = append(allEdges, e...)
 		}

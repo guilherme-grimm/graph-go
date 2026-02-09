@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Graph, NodeType, HealthStatus } from '../types';
 import styles from './HeaderBar.module.css';
 
@@ -7,11 +7,15 @@ export interface Filters {
   health: HealthStatus[];
 }
 
+export type LayoutMode = 'hierarchical' | 'force';
+
 interface HeaderBarProps {
   graph?: Graph;
   onSearchOpen: () => void;
   filters: Filters;
   onFilterChange: (filters: Filters) => void;
+  layoutMode: LayoutMode;
+  onLayoutChange: (mode: LayoutMode) => void;
 }
 
 const nodeTypes: NodeType[] = [
@@ -21,7 +25,8 @@ const nodeTypes: NodeType[] = [
 
 const healthStatuses: HealthStatus[] = ['healthy', 'degraded', 'unhealthy'];
 
-export default function HeaderBar({ graph, onSearchOpen, filters, onFilterChange }: HeaderBarProps) {
+export default function HeaderBar({ graph, onSearchOpen, filters, onFilterChange, layoutMode, onLayoutChange }: HeaderBarProps) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const healthCounts = useMemo(() => {
     if (!graph?.nodes) return { healthy: 0, degraded: 0, unhealthy: 0, unknown: 0, total: 0 };
 
@@ -66,6 +71,40 @@ export default function HeaderBar({ graph, onSearchOpen, filters, onFilterChange
         <span className={styles.searchLabel}>Search nodes...</span>
         <kbd className={styles.searchKbd}>Cmd+K</kbd>
       </button>
+
+      <div className={styles.layoutToggle}>
+        <button
+          className={styles.layoutButton}
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+        >
+          Layout: {layoutMode === 'hierarchical' ? 'Hierarchical' : 'Force-Directed'}
+          <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {dropdownOpen && (
+          <div className={styles.dropdown}>
+            <button
+              className={`${styles.dropdownItem} ${layoutMode === 'hierarchical' ? styles.dropdownItemActive : ''}`}
+              onClick={() => {
+                onLayoutChange('hierarchical');
+                setDropdownOpen(false);
+              }}
+            >
+              Hierarchical (Top-Down)
+            </button>
+            <button
+              className={`${styles.dropdownItem} ${layoutMode === 'force' ? styles.dropdownItemActive : ''}`}
+              onClick={() => {
+                onLayoutChange('force');
+                setDropdownOpen(false);
+              }}
+            >
+              Force-Directed (Organic)
+            </button>
+          </div>
+        )}
+      </div>
 
       {activeTypes.length > 0 && (
         <div className={styles.filterGroup}>

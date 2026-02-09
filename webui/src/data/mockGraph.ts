@@ -1,130 +1,229 @@
 import type { Graph } from '../types';
 
 export const MOCK_GRAPH: Graph = {
-  nodes: [
-    // Critical tier - Payment & Auth
-    {
-      id: 'payment-1',
-      type: 'payment',
-      name: 'Payment Gateway',
-      metadata: { priority: 'critical', provider: 'Stripe', version: '3.2.1' },
-      health: 'healthy',
-    },
-    {
-      id: 'auth-1',
-      type: 'auth',
-      name: 'Auth Service',
-      metadata: { priority: 'critical', provider: 'OAuth2', sessions: '12.4k' },
-      health: 'healthy',
-    },
+	nodes: [
+		// ── Application Services ─────────────────────────────────────────────
+		{
+			id: 'api-gateway',
+			type: 'gateway',
+			name: 'api-gateway',
+			metadata: { adapter: 'api-gateway', endpoint: 'http://api-gateway:8080' },
+			health: 'healthy',
+		},
+		{
+			id: 'user-service',
+			type: 'auth',
+			name: 'user-service',
+			metadata: { adapter: 'user-service', endpoint: 'http://user-service:8080' },
+			health: 'healthy',
+		},
+		{
+			id: 'order-service',
+			type: 'service',
+			name: 'order-service',
+			metadata: { adapter: 'order-service', endpoint: 'http://order-service:8080' },
+			health: 'healthy',
+		},
+		{
+			id: 'product-service',
+			type: 'service',
+			name: 'product-service',
+			metadata: { adapter: 'product-service', endpoint: 'http://product-service:8080' },
+			health: 'healthy',
+		},
+		{
+			id: 'media-service',
+			type: 'service',
+			name: 'media-service',
+			metadata: { adapter: 'media-service', endpoint: 'http://media-service:8080' },
+			health: 'healthy',
+		},
 
-    // High tier - Core infrastructure
-    {
-      id: 'api-1',
-      type: 'api',
-      name: 'API Gateway',
-      metadata: { endpoints: ['/v1/users', '/v1/orders', '/v1/products'], version: '2.8.0' },
-      health: 'healthy',
-    },
-    {
-      id: 'db-1',
-      type: 'database',
-      name: 'PostgreSQL Primary',
-      metadata: { tables: ['users', 'orders', 'products', 'transactions'], version: '15.2', size: '48GB' },
-      health: 'healthy',
-    },
-    {
-      id: 'db-2',
-      type: 'database',
-      name: 'PostgreSQL Replica',
-      parent: 'db-1',
-      metadata: { tables: ['users', 'orders', 'products', 'transactions'], version: '15.2', replica: true },
-      health: 'healthy',
-    },
+		// ── Infrastructure: service-level nodes ──────────────────────────────
+		{
+			id: 'service-postgres',
+			type: 'postgres',
+			name: 'postgres',
+			metadata: { adapter: 'postgres' },
+			health: 'healthy',
+		},
+		{
+			id: 'service-mongodb',
+			type: 'mongodb',
+			name: 'mongodb',
+			metadata: { adapter: 'mongodb' },
+			health: 'healthy',
+		},
+		{
+			id: 'service-minio',
+			type: 's3',
+			name: 'minio',
+			metadata: { adapter: 'minio' },
+			health: 'healthy',
+		},
 
-    // Medium tier - Services
-    {
-      id: 'svc-user',
-      type: 'service',
-      name: 'User Service',
-      parent: 'api-1',
-      metadata: { version: '2.1.0', instances: 3 },
-      health: 'healthy',
-    },
-    {
-      id: 'svc-order',
-      type: 'service',
-      name: 'Order Service',
-      parent: 'api-1',
-      metadata: { version: '1.8.3', instances: 4 },
-      health: 'degraded',
-    },
-    {
-      id: 'svc-notify',
-      type: 'service',
-      name: 'Notification Service',
-      metadata: { version: '1.2.0', instances: 2 },
-      health: 'unhealthy',
-    },
-    {
-      id: 'cache-1',
-      type: 'cache',
-      name: 'Redis Cluster',
-      metadata: { size: '8GB', region: 'us-east-1', nodes: 3 },
-      health: 'healthy',
-    },
-    {
-      id: 'queue-1',
-      type: 'queue',
-      name: 'Event Queue',
-      metadata: { pending: '2.3k', throughput: '450/s' },
-      health: 'healthy',
-    },
+		// PostgreSQL: database -> tables
+		{
+			id: 'pg-mydb',
+			type: 'database',
+			name: 'mydb',
+			parent: 'service-postgres',
+			metadata: { adapter: 'postgres', database: 'mydb' },
+			health: 'healthy',
+		},
+		{
+			id: 'pg-mydb-users',
+			type: 'table',
+			name: 'users',
+			parent: 'pg-mydb',
+			metadata: { adapter: 'postgres', schema: 'public' },
+			health: 'healthy',
+		},
+		{
+			id: 'pg-mydb-products',
+			type: 'table',
+			name: 'products',
+			parent: 'pg-mydb',
+			metadata: { adapter: 'postgres', schema: 'public' },
+			health: 'healthy',
+		},
+		{
+			id: 'pg-mydb-orders',
+			type: 'table',
+			name: 'orders',
+			parent: 'pg-mydb',
+			metadata: { adapter: 'postgres', schema: 'public' },
+			health: 'healthy',
+		},
+		{
+			id: 'pg-mydb-order_items',
+			type: 'table',
+			name: 'order_items',
+			parent: 'pg-mydb',
+			metadata: { adapter: 'postgres', schema: 'public' },
+			health: 'healthy',
+		},
 
-    // Low tier - Storage & auxiliary
-    {
-      id: 'bucket-1',
-      type: 'bucket',
-      name: 'Asset Storage',
-      metadata: { region: 'us-east-1', size: '250GB', objects: '1.2M' },
-      health: 'healthy',
-    },
-    {
-      id: 'bucket-2',
-      type: 'bucket',
-      name: 'Backup Storage',
-      metadata: { region: 'us-west-2', size: '1.8TB', retention: '90d' },
-      health: 'healthy',
-    },
-  ],
-  edges: [
-    // API Gateway connections
-    { id: 'e1', source: 'api-1', target: 'svc-user', type: 'routes', label: 'REST' },
-    { id: 'e2', source: 'api-1', target: 'svc-order', type: 'routes', label: 'REST' },
-    { id: 'e3', source: 'api-1', target: 'auth-1', type: 'validates', label: 'JWT' },
+		// MongoDB: database -> collections
+		{
+			id: 'mongo-store',
+			type: 'database',
+			name: 'store',
+			parent: 'service-mongodb',
+			metadata: { adapter: 'mongodb' },
+			health: 'healthy',
+		},
+		{
+			id: 'mongo-store-products',
+			type: 'collection',
+			name: 'products',
+			parent: 'mongo-store',
+			metadata: { adapter: 'mongodb', database: 'store' },
+			health: 'healthy',
+		},
+		{
+			id: 'mongo-store-reviews',
+			type: 'collection',
+			name: 'reviews',
+			parent: 'mongo-store',
+			metadata: { adapter: 'mongodb', database: 'store' },
+			health: 'healthy',
+		},
+		{
+			id: 'mongo-store-categories',
+			type: 'collection',
+			name: 'categories',
+			parent: 'mongo-store',
+			metadata: { adapter: 'mongodb', database: 'store' },
+			health: 'healthy',
+		},
 
-    // Service to database
-    { id: 'e4', source: 'svc-user', target: 'db-1', type: 'queries', label: 'SQL' },
-    { id: 'e5', source: 'svc-order', target: 'db-1', type: 'queries', label: 'SQL' },
-    { id: 'e6', source: 'payment-1', target: 'db-1', type: 'queries', label: 'SQL' },
+		// S3/MinIO: buckets -> prefixes
+		{
+			id: 's3-assets',
+			type: 'bucket',
+			name: 'assets',
+			parent: 'service-minio',
+			metadata: { adapter: 's3' },
+			health: 'healthy',
+		},
+		{
+			id: 's3-assets-images/',
+			type: 'storage',
+			name: 'images/',
+			parent: 's3-assets',
+			metadata: { adapter: 's3', bucket: 'assets' },
+			health: 'healthy',
+		},
+		{
+			id: 's3-assets-documents/',
+			type: 'storage',
+			name: 'documents/',
+			parent: 's3-assets',
+			metadata: { adapter: 's3', bucket: 'assets' },
+			health: 'healthy',
+		},
+		{
+			id: 's3-backups',
+			type: 'bucket',
+			name: 'backups',
+			parent: 'service-minio',
+			metadata: { adapter: 's3' },
+			health: 'healthy',
+		},
+		{
+			id: 's3-backups-daily/',
+			type: 'storage',
+			name: 'daily/',
+			parent: 's3-backups',
+			metadata: { adapter: 's3', bucket: 'backups' },
+			health: 'healthy',
+		},
+		{
+			id: 's3-backups-weekly/',
+			type: 'storage',
+			name: 'weekly/',
+			parent: 's3-backups',
+			metadata: { adapter: 's3', bucket: 'backups' },
+			health: 'healthy',
+		},
+	],
+	edges: [
+		// ── Gateway → Services ───────────────────────────────────────────────
+		{ id: 'api-gateway-to-user-service', source: 'api-gateway', target: 'user-service', type: 'depends_on', label: 'routes' },
+		{ id: 'api-gateway-to-order-service', source: 'api-gateway', target: 'order-service', type: 'depends_on', label: 'routes' },
+		{ id: 'api-gateway-to-product-service', source: 'api-gateway', target: 'product-service', type: 'depends_on', label: 'routes' },
+		{ id: 'api-gateway-to-media-service', source: 'api-gateway', target: 'media-service', type: 'depends_on', label: 'routes' },
 
-    // Database replication
-    { id: 'e7', source: 'db-1', target: 'db-2', type: 'replicates' },
+		// ── Services → Infrastructure ────────────────────────────────────────
+		{ id: 'user-service-to-pg-mydb-users', source: 'user-service', target: 'pg-mydb-users', type: 'depends_on', label: 'reads/writes' },
+		{ id: 'order-service-to-pg-mydb-orders', source: 'order-service', target: 'pg-mydb-orders', type: 'depends_on', label: 'reads/writes' },
+		{ id: 'order-service-to-pg-mydb-order_items', source: 'order-service', target: 'pg-mydb-order_items', type: 'depends_on', label: 'reads/writes' },
+		{ id: 'product-service-to-pg-mydb-products', source: 'product-service', target: 'pg-mydb-products', type: 'depends_on', label: 'reads/writes' },
+		{ id: 'product-service-to-mongo-store-products', source: 'product-service', target: 'mongo-store-products', type: 'depends_on', label: 'reads/writes' },
+		{ id: 'product-service-to-mongo-store-categories', source: 'product-service', target: 'mongo-store-categories', type: 'depends_on', label: 'reads' },
+		{ id: 'media-service-to-s3-assets', source: 'media-service', target: 's3-assets', type: 'depends_on', label: 'reads/writes' },
 
-    // Caching
-    { id: 'e8', source: 'svc-user', target: 'cache-1', type: 'caches' },
-    { id: 'e9', source: 'auth-1', target: 'cache-1', type: 'sessions' },
+		// ── Infrastructure contains edges ────────────────────────────────────
+		{ id: 'svc-pg-mydb', source: 'service-postgres', target: 'pg-mydb', type: 'contains', label: 'contains' },
+		{ id: 'svc-mongo-store', source: 'service-mongodb', target: 'mongo-store', type: 'contains', label: 'contains' },
+		{ id: 'svc-minio-assets', source: 'service-minio', target: 's3-assets', type: 'contains', label: 'contains' },
+		{ id: 'svc-minio-backups', source: 'service-minio', target: 's3-backups', type: 'contains', label: 'contains' },
 
-    // Payment flow
-    { id: 'e10', source: 'svc-order', target: 'payment-1', type: 'charges' },
+		// MongoDB contains edges
+		{ id: 'mongo-contains-store-products', source: 'mongo-store', target: 'mongo-store-products', type: 'contains', label: 'contains' },
+		{ id: 'mongo-contains-store-reviews', source: 'mongo-store', target: 'mongo-store-reviews', type: 'contains', label: 'contains' },
+		{ id: 'mongo-contains-store-categories', source: 'mongo-store', target: 'mongo-store-categories', type: 'contains', label: 'contains' },
 
-    // Event queue
-    { id: 'e11', source: 'svc-order', target: 'queue-1', type: 'publishes' },
-    { id: 'e12', source: 'svc-notify', target: 'queue-1', type: 'subscribes' },
-    { id: 'e13', source: 'payment-1', target: 'queue-1', type: 'publishes' },
+		// S3 contains edges
+		{ id: 's3-contains-assets-images', source: 's3-assets', target: 's3-assets-images/', type: 'contains', label: 'contains' },
+		{ id: 's3-contains-assets-docs', source: 's3-assets', target: 's3-assets-documents/', type: 'contains', label: 'contains' },
+		{ id: 's3-contains-backups-daily', source: 's3-backups', target: 's3-backups-daily/', type: 'contains', label: 'contains' },
+		{ id: 's3-contains-backups-weekly', source: 's3-backups', target: 's3-backups-weekly/', type: 'contains', label: 'contains' },
 
-    // Storage
-    { id: 'e14', source: 'svc-user', target: 'bucket-1', type: 'uploads' },
-    { id: 'e15', source: 'db-1', target: 'bucket-2', type: 'backups' },
-  ],
+		// PostgreSQL foreign keys
+		{ id: 'fk-orders-user_id', source: 'pg-mydb-orders', target: 'pg-mydb-users', type: 'foreign_key', label: 'orders.user_id -> users.id' },
+		{ id: 'fk-order_items-order_id', source: 'pg-mydb-order_items', target: 'pg-mydb-orders', type: 'foreign_key', label: 'order_items.order_id -> orders.id' },
+		{ id: 'fk-order_items-product_id', source: 'pg-mydb-order_items', target: 'pg-mydb-products', type: 'foreign_key', label: 'order_items.product_id -> products.id' },
+	],
 };

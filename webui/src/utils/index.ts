@@ -43,3 +43,6 @@ export function calculatePriority(node: GraphNode, connectionCount: number): Pri
 export function countConnections(nodeId: string, edges: GraphEdge[]): number {
   return edges.filter(e => e.source === nodeId || e.target === nodeId).length;
 }
+
+export * from './graphTransform';
+export * from './forceDirectedLayout';

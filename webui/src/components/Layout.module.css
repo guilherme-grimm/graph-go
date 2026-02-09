@@ -6,6 +6,36 @@
   background: var(--bg-void);
 }
 
+/* Mock data banner */
+.mockBanner {
+  position: fixed;
+  top: 48px;
+  left: 0;
+  right: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: rgba(234, 179, 8, 0.08);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.2);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: rgb(234, 179, 8);
+  letter-spacing: 0.02em;
+}
+
+.mockIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.layout:has(.mockBanner) .graphArea {
+  top: calc(48px + 32px);
+}
+
 .graphArea {
   position: absolute;
   top: 48px;

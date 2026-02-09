@@ -13,7 +13,7 @@
 
 .active {
   stroke: var(--accent-highlight);
-  stroke-width: var(--edge-width-active);
+  stroke-width: 3px;
 }
 
 .highlighted {
@@ -21,12 +21,16 @@
   stroke-width: var(--edge-width-active);
 }
 
-.dimmed {
-  opacity: 0.15;
+.animatedPath {
+  stroke: var(--accent-highlight);
+  stroke-width: 3px;
+  animation: dashFlow 1s linear infinite;
 }
 
-.dimmedEdge {
-  stroke: var(--text-dim);
+@keyframes dashFlow {
+  to {
+    stroke-dashoffset: -10px;
+  }
 }
 
 /* Edge labels */

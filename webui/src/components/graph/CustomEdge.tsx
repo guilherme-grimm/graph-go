@@ -33,10 +33,9 @@ function CustomEdge({
 
   const isActive = data?.isActive;
   const isHighlighted = data?.isHighlighted || selected;
-  const isDimmed = isActive === false && !selected;
 
   return (
-    <g className={`${styles.edgeGroup} ${isDimmed ? styles.dimmed : ''}`}>
+    <g className={styles.edgeGroup}>
       <BaseEdge
         id={id}
         path={edgePath}
@@ -44,9 +43,18 @@ function CustomEdge({
           ${styles.edge}
           ${isActive ? styles.active : ''}
           ${isHighlighted ? styles.highlighted : ''}
-          ${isDimmed ? styles.dimmedEdge : ''}
         `}
       />
+
+      {/* Animated overlay for active edges */}
+      {isActive && (
+        <path
+          d={edgePath}
+          className={styles.animatedPath}
+          fill="none"
+          strokeDasharray="5 5"
+        />
+      )}
 
       {data?.label && (
         <g transform={`translate(${labelX}, ${labelY})`}>
