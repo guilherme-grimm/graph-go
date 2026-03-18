@@ -61,7 +61,7 @@ make docker-build && make docker-up
 
 ### Prerequisites
 - Go 1.25.6+
-- Node.js 18+ (or Bun)
+- Node.js 24+ (or Bun)
 - PostgreSQL, MongoDB, or S3 (optional, for testing adapters)
 
 ### Backend Setup
