@@ -1,4 +1,4 @@
-# Contributing to graph-info
+# Contributing to graph-go
 
 ---
 
@@ -30,7 +30,7 @@ git remote add upstream https://github.com/guilherme-grimm/graph-go.git
 
 ### Local Development Setup
 
-Run backend and frontend in separate processes — Vite proxies `/api`, `/websocket`, and `/health` to the backend on :8080, so the SPA at :5173 hot-reloads against a live API.
+Run backend and frontend in separate processes. Vite proxies `/api`, `/websocket`, and `/health` to the backend on :8080, so the SPA at :5173 hot-reloads against a live API.
 
 ```bash
 make install    # Go modules + npm deps
@@ -39,11 +39,17 @@ make dev        # backend on :8080, Vite dev server on :5173
 
 Open `http://localhost:5173` for the dev UI.
 
+For the repo-scoped seeded onboarding flow that mirrors the CLI-first product direction:
+
+```bash
+go run ./cmd/app demo
+```
+
 For a single-process check that mirrors production (SPA embedded in the binary):
 
 ```bash
 make build      # builds frontend bundle, embeds it, builds binary
-./bin/graph-go  # serves UI + API on :8080
+./bin/graph-go serve  # or just ./bin/graph-go
 ```
 
 ### Make Targets
@@ -76,9 +82,9 @@ make lint               # golangci-lint
 ### Before Committing
 
 ```bash
-cd binary && go fmt ./... && go vet ./...
-cd binary && go test ./...                                                    # unit tests
-cd binary && go test -tags=integration -timeout=5m ./internal/adapters/...    # integration tests (requires Docker)
+go fmt ./... && go vet ./...
+go test ./...                                                    # unit tests
+go test -tags=integration -timeout=5m ./internal/adapters/...    # integration tests (requires Docker)
 cd webui && npx tsc --noEmit
 ```
 
@@ -100,11 +106,11 @@ cd webui && npx tsc --noEmit
 
 ## Adding a New Adapter
 
-See [README.md](README.md#adding-a-new-adapter) for the full step-by-step guide. Adapters live in `binary/internal/adapters/{name}/`.
+See [README.md](README.md#adding-a-new-adapter) for the full step-by-step guide. Adapters live in `internal/adapters/{name}/`.
 
 ## Adding a New Discoverer
 
-See [README.md](README.md#adding-a-new-discoverer) for the full step-by-step guide. Discoverers live in `binary/internal/discovery/{name}/` and implement the `Discoverer` interface defined in `binary/internal/discovery/discovery.go`. Existing examples: `discovery/docker/` (adapter-oriented) and `discovery/kubernetes/` (topology-oriented).
+See [README.md](README.md#adding-a-new-discoverer) for the full step-by-step guide. Discoverers live in `internal/discovery/{name}/` and implement the `Discoverer` interface defined in `internal/discovery/discovery.go`. Existing examples: `discovery/docker/` (adapter-oriented) and `discovery/kubernetes/` (topology-oriented).
 
 ### Integration Tests (Required)
 
@@ -125,8 +131,8 @@ Example pattern (see any existing adapter test for reference):
 package myadapter
 
 import (
-    "binary/internal/adapters"
-    "binary/internal/adapters/adaptertest"
+    "github.com/guilherme-grimm/graph-go/internal/adapters"
+    "github.com/guilherme-grimm/graph-go/internal/adapters/adaptertest"
     // testcontainers module + driver imports
 )
 
@@ -161,7 +167,7 @@ func TestContract(t *testing.T) {
 Run your tests with:
 
 ```bash
-cd binary && go test -tags=integration -v ./internal/adapters/{name}/
+go test -tags=integration -v ./internal/adapters/{name}/
 ```
 
 ---
@@ -176,5 +182,5 @@ cd binary && go test -tags=integration -v ./internal/adapters/{name}/
 
 ## Questions?
 
-1. Check existing [Issues](https://github.com/yourusername/graph-info/issues)
-2. Start a [Discussion](https://github.com/yourusername/graph-info/discussions)
+1. Check existing [Issues](https://github.com/guilherme-grimm/graph-go/issues)
+2. Start a [Discussion](https://github.com/guilherme-grimm/graph-go/discussions)

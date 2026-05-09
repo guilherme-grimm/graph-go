@@ -13,7 +13,7 @@ Point graph-go at your stack and get a live, interactive map of every database, 
 
 ---
 
-graph-go **auto-discovers** your infrastructure by connecting to the Docker daemon, inspecting running containers, and probing databases and storage services. No manual inventory needed — it builds the graph for you.
+graph-go is a **CLI-first infrastructure mapper**. It auto-discovers your infrastructure by connecting to the Docker daemon, inspecting running containers, and probing databases and storage services. The UI is served by the backend and reflects real backend state — no manual inventory needed.
 
 | Capability | Details |
 |---|---|
@@ -34,15 +34,25 @@ graph-go **auto-discovers** your infrastructure by connecting to the Docker daem
 
 ## Quick Start — try it in 30 seconds
 
-Boots a seeded stack (Postgres, Mongo, MinIO, mock services) so the graph populates immediately:
+Boot the seeded demo stack with the CLI. This is the fastest way to see graph-go against a realistic environment and the intended onboarding path for first-time users:
 
 ```bash
 git clone https://github.com/guilherme-grimm/graph-go.git
 cd graph-go
-make docker-up
+go run ./cmd/app demo
 ```
 
-Open **http://localhost:8080** — single URL, single port. Stop with `make docker-down`.
+Open **http://localhost:8080**. The command runs attached via Docker Compose. Press `Ctrl+C` to stop the attached session.
+
+The first run can take several minutes on a cold machine because Docker may need to pull base images and build the local demo images. Later runs are much faster.
+
+The demo stack expects these host ports to be free: `8080`, `5432`, `27017`, `9000`, and `9001`.
+
+If you need an explicit teardown afterward:
+
+```bash
+docker compose -f docker-compose.demo.yml down
+```
 
 ---
 
@@ -66,15 +76,34 @@ For services that live outside Docker/Kubernetes (remote databases, managed clou
 
 ## Pre-built binary
 
-Single self-contained binary — UI is embedded.
+Single self-contained binary — UI is embedded, but the entrypoint is still the CLI.
 
 ```bash
 # Linux amd64
 curl -sL https://github.com/guilherme-grimm/graph-go/releases/latest/download/graph-go_linux_amd64.tar.gz | tar xz
-./graph-go
+./graph-go serve   # or just `./graph-go` - same thing
 ```
 
 Open **http://localhost:8080**. Other platforms on the [Releases page](https://github.com/guilherme-grimm/graph-go/releases).
+
+---
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `graph-go demo` | Boot the seeded Docker Compose demo stack from the repository and stream its output in the foreground. |
+| `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). |
+| `graph-go scan` | Run discovery once and emit the graph as JSON to stdout. Useful for piping into `jq`, CI checks, or one-shot exports. |
+| `graph-go version` | Print version, commit, and build date. |
+
+Global flags (apply to every subcommand): `--config`, `--log-level`, `--log-format`. See `graph-go <command> --help` for the full per-command surface.
+
+Typical flow:
+
+1. `graph-go demo` for a realistic local walkthrough.
+2. `graph-go serve` to run against your own infrastructure.
+3. `graph-go scan` for one-shot automation, exports, or CI checks.
 
 ---
 
@@ -222,7 +251,7 @@ Edges represent relationships (`contains`, `foreign_key`, `routes_to`, etc.).
 ### Unit Tests
 
 ```bash
-cd binary && go test ./...
+go test ./...
 ```
 
 Runs without Docker. Includes pure function tests and HTTP handler tests.
@@ -230,7 +259,7 @@ Runs without Docker. Includes pure function tests and HTTP handler tests.
 ### Integration Tests
 
 ```bash
-cd binary && go test -tags=integration -v -timeout=5m ./internal/adapters/...
+go test -tags=integration -v -timeout=5m ./internal/adapters/...
 ```
 
 Requires Docker. Uses [testcontainers-go](https://golang.testcontainers.org/) to spin up real database instances (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, MinIO) — no mocks.
@@ -243,14 +272,14 @@ Every adapter runs through the **contract test suite** (`adaptertest.RunContract
 Run a single adapter's tests:
 
 ```bash
-cd binary && go test -tags=integration -v ./internal/adapters/redis/
+go test -tags=integration -v ./internal/adapters/redis/
 ```
 
 ### All Tests
 
 ```bash
 make test  # unit + type-check
-cd binary && go test -tags=integration -timeout=5m ./internal/adapters/...  # integration
+go test -tags=integration -timeout=5m ./internal/adapters/...  # integration
 ```
 
 ---
@@ -309,7 +338,7 @@ Streams real-time health updates.
 
 ## Adding a New Adapter
 
-1. **Create adapter package** in `binary/internal/adapters/{name}/`
+1. **Create adapter package** in `internal/adapters/{name}/`
 2. **Implement the `Adapter` interface:**
    ```go
    type Adapter interface {
@@ -326,14 +355,14 @@ Streams real-time health updates.
    - Seed representative data
    - Call `adaptertest.RunContractTests` to validate the interface contract
    - Add adapter-specific tests (filtering, ID format, metadata, etc.)
-5. **Import adapter** in `binary/internal/server/server.go` (blank import for `init()`)
-6. **Add node type** in `binary/internal/graph/nodes/nodes.go`
+5. **Import adapter** in `internal/server/server.go` (blank import for `init()`)
+6. **Add node type** in `internal/graph/nodes/nodes.go`
 7. **Update frontend types** in `webui/src/types/graph.ts`
 8. **Add icon** in `webui/src/components/graph/CustomNode.tsx`
 
 ## Adding a New Discoverer
 
-Discoverers live in `binary/internal/discovery/{name}/` and implement the `Discoverer` interface:
+Discoverers live in `internal/discovery/{name}/` and implement the `Discoverer` interface:
 
 ```go
 type Discoverer interface {
@@ -344,9 +373,9 @@ type Discoverer interface {
 }
 ```
 
-1. **Create discoverer package** in `binary/internal/discovery/{name}/`
+1. **Create discoverer package** in `internal/discovery/{name}/`
 2. **Implement the `Discoverer` interface** — return `[]ServiceInfo` from `Discover()`. Topology-producing discoverers (like K8s) populate `Nodes`/`Edges` directly; adapter-oriented ones (like Docker) populate `Config` for adapter bridging.
-3. **Wire into server** in `binary/internal/server/server.go` — add a `build{Name}Discovery()` function and call it alongside the existing discoverers.
+3. **Wire into server** in `internal/server/server.go` — add a `build{Name}Discovery()` function and call it alongside the existing discoverers.
 4. **Add integration tests** with `//go:build integration` — use real infrastructure (kind/k3d for K8s, testcontainers for others). No mocks.
 
 See `CONTRIBUTING.md` for detailed guidance.

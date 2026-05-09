@@ -28,13 +28,12 @@ test.describe('Page Load', () => {
     expect(count).toBeGreaterThanOrEqual(10);
   });
 
-  test('does NOT show mock data banner when backend is available', async ({ page }) => {
+  test('does NOT show a graph load error when backend is available', async ({ page }) => {
     await page.goto('/');
     await waitForGraphReady(page);
 
-    // The mock banner should not be visible when backend is up
-    const mockBanner = page.locator('text=Displaying mock data');
-    await expect(mockBanner).not.toBeVisible();
+    const graphLoadError = page.locator('text=Failed to load graph');
+    await expect(graphLoadError).not.toBeVisible();
   });
 
   test('renders ReactFlow controls (zoom buttons)', async ({ page }) => {

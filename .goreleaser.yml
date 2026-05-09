@@ -1,13 +1,14 @@
 version: 2
 
-project_name: graph-info
+project_name: graph-go
 
 builds:
-  - main: ./cmd/app/main.go
-    dir: binary
-    binary: graph-info
+  - main: ./cmd/app
+    binary: graph-go
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.Version={{ .Version }} -X main.Commit={{ .Commit }} -X main.BuildDate={{ .Date }}
     goos:
       - linux
       - darwin
