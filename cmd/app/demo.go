@@ -56,15 +56,9 @@ func runDemo(stdout, stderr io.Writer) error {
 	}
 
 	composeFile := filepath.Join(repoRoot, demoComposeFile)
-	fmt.Fprintln(stdout, "Starting graph-go demo stack with Docker Compose...")
-	fmt.Fprintf(stdout, "Repo: %s\n", repoRoot)
-	fmt.Fprintf(stdout, "Compose file: %s\n", composeFile)
-	fmt.Fprintln(stdout, "First run note: image pulls and builds can take several minutes on a cold machine.")
-	fmt.Fprintln(stdout, "Subsequent runs are much faster once the images are cached.")
-	fmt.Fprintln(stdout, "Required host ports: 8080, 5432, 27017, 9000, 9001.")
-	fmt.Fprintln(stdout, "Open http://localhost:8080 once the services are healthy.")
-	fmt.Fprintln(stdout, "Press Ctrl+C to stop the attached Compose session.")
-	fmt.Fprintln(stdout, "To remove the stack later: docker compose -f docker-compose.demo.yml down")
+	if err := writeDemoIntro(stdout, repoRoot, composeFile); err != nil {
+		return fmt.Errorf("write demo intro: %w", err)
+	}
 
 	cmd := exec.Command("docker", "compose", "-f", composeFile, "up", "--build")
 	cmd.Dir = repoRoot
@@ -212,4 +206,26 @@ func containsPort(ports []int, want int) bool {
 	}
 
 	return false
+}
+
+func writeDemoIntro(w io.Writer, repoRoot, composeFile string) error {
+	lines := []string{
+		"Starting graph-go demo stack with Docker Compose...",
+		fmt.Sprintf("Repo: %s", repoRoot),
+		fmt.Sprintf("Compose file: %s", composeFile),
+		"First run note: image pulls and builds can take several minutes on a cold machine.",
+		"Subsequent runs are much faster once the images are cached.",
+		"Required host ports: 8080, 5432, 27017, 9000, 9001.",
+		"Open http://localhost:8080 once the services are healthy.",
+		"Press Ctrl+C to stop the attached Compose session.",
+		"To remove the stack later: docker compose -f docker-compose.demo.yml down",
+	}
+
+	for _, line := range lines {
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
