@@ -21,7 +21,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-          cache-dependency-path: binary/go.sum
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: webui
+        run: npm ci
+
+      - name: Build embedded frontend bundle
+        run: make build-frontend
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -41,6 +54,10 @@ jobs:
         id: version
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
+      - name: Compute build date
+        id: build_date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -48,22 +65,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push backend
+      - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: backend
           push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.tag }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build_date.outputs.value }}
           tags: |
-            ghcr.io/${{ github.repository }}-backend:${{ steps.version.outputs.tag }}
-            ghcr.io/${{ github.repository }}-backend:latest
-
-      - name: Build and push frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: frontend
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}-frontend:${{ steps.version.outputs.tag }}
-            ghcr.io/${{ github.repository }}-frontend:latest
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
+            ghcr.io/${{ github.repository }}:latest
