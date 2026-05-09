@@ -11,4 +11,4 @@ npm run build    # Production build to dist/
 npm run lint     # ESLint
 ```
 
-The dev server proxies API requests to the backend at `localhost:8080`. If the backend is unavailable, the UI falls back to built-in mock data.
+The dev server proxies API requests to the backend at `localhost:8080`. The UI expects a running backend and will show the real loading or error state when the API is unavailable.

@@ -34,15 +34,25 @@ graph-go **auto-discovers** your infrastructure by connecting to the Docker daem
 
 ## Quick Start — try it in 30 seconds
 
-Boots a seeded stack (Postgres, Mongo, MinIO, mock services) so the graph populates immediately:
+Boot the seeded demo stack with the CLI. This is the fastest way to see graph-go against a realistic environment:
 
 ```bash
 git clone https://github.com/guilherme-grimm/graph-go.git
 cd graph-go
-make docker-up
+go run ./cmd/app demo
 ```
 
-Open **http://localhost:8080** — single URL, single port. Stop with `make docker-down`.
+Open **http://localhost:8080**. The command runs attached via Docker Compose. Press `Ctrl+C` to stop the attached session.
+
+The first run can take several minutes on a cold machine because Docker may need to pull base images and build the local demo images. Later runs are much faster.
+
+The demo stack expects these host ports to be free: `8080`, `5432`, `27017`, `9000`, and `9001`.
+
+If you need an explicit teardown afterward:
+
+```bash
+docker compose -f docker-compose.demo.yml down
+```
 
 ---
 
@@ -82,6 +92,7 @@ Open **http://localhost:8080**. Other platforms on the [Releases page](https://g
 
 | Command | What it does |
 |---|---|
+| `graph-go demo` | Boot the seeded Docker Compose demo stack from the repository and stream its output in the foreground. |
 | `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). |
 | `graph-go scan` | Run discovery once and emit the graph as JSON to stdout. Useful for piping into `jq`, CI checks, or one-shot exports. |
 | `graph-go version` | Print version, commit, and build date. |

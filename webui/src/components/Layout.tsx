@@ -7,7 +7,6 @@ import { ErrorBoundary, EmptyState } from './ui';
 import { useWebSocket, useAppShortcuts } from '../hooks';
 import { useGraph as useGraphData } from '../api';
 import { hasNamespaces } from '../utils';
-import { MOCK_GRAPH } from '../data';
 import type { Graph, GraphEdge } from '../types';
 import styles from './Layout.module.css';
 
@@ -68,8 +67,7 @@ export default function Layout() {
   }, [setSearchParams]);
 
   const { data: apiGraph, isLoading, error, refetch } = useGraphData();
-  const isMockData = !apiGraph?.nodes;
-  const graph: Graph = isMockData ? MOCK_GRAPH : apiGraph;
+  const graph: Graph | undefined = apiGraph;
 
   // Auto-detect swimlane mode for k8s graphs when no explicit layout was saved.
   const autoDetectedRef = useRef(false);
@@ -183,15 +181,6 @@ export default function Layout() {
         wsStatus={wsStatus}
       />
 
-      {isMockData && !isLoading && (
-        <div className={styles.mockBanner}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={styles.mockIcon}>
-            <path d="M12 9v4m0 4h.01M12 2L2 22h20L12 2z" />
-          </svg>
-          <span>Displaying mock data — backend unavailable</span>
-        </div>
-      )}
-
       <div className={styles.graphArea}>
         <ErrorBoundary>
           {isFilteredEmpty ? (
@@ -208,7 +197,7 @@ export default function Layout() {
               onEdgeClick={handleEdgeClick}
               layoutMode={layoutMode}
               resetKey={layoutResetKey}
-              isLoading={!apiGraph && isLoading}
+              isLoading={isLoading}
               error={error instanceof Error ? error : error ? new Error(String(error)) : null}
               onRetry={() => refetch()}
             />

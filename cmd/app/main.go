@@ -56,6 +56,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&healthCheck, "health-check", false, "hit the local /health endpoint and exit 0/1 (for Docker HEALTHCHECK)")
 
 	cmd.AddCommand(newServeCmd())
+	cmd.AddCommand(newDemoCmd())
 	cmd.AddCommand(newScanCmd())
 	cmd.AddCommand(newVersionCmd())
 
