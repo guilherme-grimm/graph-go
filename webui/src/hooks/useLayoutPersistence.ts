@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Graph } from '../types';
 
 interface Position {
@@ -64,30 +64,23 @@ function savePositions(graphHash: string, positions: Map<string, Position>) {
 }
 
 export function useLayoutPersistence(graph: Graph | undefined, layoutMode?: string) {
-  const [graphHash, setGraphHash] = useState<string>('');
-  const [savedPositions, setSavedPositions] = useState<Map<string, Position>>(new Map());
-
-  // Calculate hash and load positions when graph or layout mode changes
-  useEffect(() => {
-    const hash = calculateGraphHash(graph, layoutMode);
-    if (hash && hash !== graphHash) {
-      setGraphHash(hash);
-      const positions = loadPositions(hash);
-      setSavedPositions(positions);
-    }
-  }, [graph, graphHash, layoutMode]);
+  const [revision, setRevision] = useState(0);
+  const graphHash = useMemo(() => calculateGraphHash(graph, layoutMode), [graph, layoutMode]);
+  const savedPositions = useMemo(() => {
+    if (!graphHash) return new Map<string, Position>();
+    const positions = loadPositions(graphHash);
+    return revision >= 0 ? positions : new Map<string, Position>();
+  }, [graphHash, revision]);
 
   // Save a single position (debounced externally)
   const savePosition = useCallback((nodeId: string, position: { x: number; y: number }, isPinned: boolean = false) => {
     if (!graphHash) return;
 
-    setSavedPositions(prev => {
-      const updated = new Map(prev);
-      updated.set(nodeId, { ...position, isPinned });
-      savePositions(graphHash, updated);
-      return updated;
-    });
-  }, [graphHash]);
+    const updated = new Map(savedPositions);
+    updated.set(nodeId, { ...position, isPinned });
+    savePositions(graphHash, updated);
+    setRevision(prev => prev + 1);
+  }, [graphHash, savedPositions]);
 
   // Clear all saved positions for current graph
   const clearLayout = useCallback(() => {
@@ -100,7 +93,7 @@ export function useLayoutPersistence(graph: Graph | undefined, layoutMode?: stri
         delete data[graphHash];
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       }
-      setSavedPositions(new Map());
+      setRevision(prev => prev + 1);
     } catch (error) {
       console.warn('Failed to clear layout:', error);
     }

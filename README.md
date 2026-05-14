@@ -28,7 +28,7 @@ graph-go is a **CLI-first infrastructure mapper**. It auto-discovers your infras
 | **S3 / MinIO** | Buckets and top-level prefixes |
 | **HTTP services** | Health endpoints, dependency mapping between services |
 | **Real-time health** | WebSocket-powered live status updates every 5 seconds |
-| **Interactive graph** | Swimlane layout, namespace group containers, pan/zoom, filter by type/health, search nodes |
+| **Interactive graph** | Three layouts (swimlane, hierarchical, force-directed), namespace group containers, pan/zoom, node search & highlight, per-graph layout persistence |
 
 ---
 
@@ -185,15 +185,17 @@ Config (YAML) ──→ YAML Merge ───────────▶│
 - **Kubernetes Discovery**: Uses client-go informers with debounced event handling; discovers Namespaces, Deployments, StatefulSets, DaemonSets, Pods, and Services with health mapping
 - **Adapters**: Implement the `Adapter` interface to probe databases and storage services
 - **Registry**: Manages adapters and topology sets, creates service-level parent nodes, aggregates graph data
-- **Cache**: 30-second TTL with singleflight pattern to prevent thundering herd
-- **WebSocket**: Streams health updates every 5 seconds
+- **Cache**: 30s discovery TTL and 10s health TTL, both guarded by singleflight to prevent thundering herd
+- **WebSocket**: Streams health updates every 5 seconds, plus a `graph_update` ping when node topology changes
 
 ### Frontend (React + TypeScript)
 
-- **Swimlane Layout**: Namespace-aware layout with zone classification (system, infra, application namespaces)
+- **Three layout modes**: swimlane (namespace-aware with zone classification — system, infra, application), hierarchical (DAG), and force-directed
 - **Group Containers**: K8s namespaces render as collapsible bounding boxes via React Flow grouping
-- **Node Inspector**: Side panel showing detailed metadata and connections
-- **WebSocket Hook**: Real-time health updates without polling
+- **Node & Edge Inspectors**: side panels showing detailed metadata and connections
+- **Search overlay**: full-text node search with selection highlighting
+- **Layout persistence**: per-graph position memory in localStorage (LRU, up to 50 graphs)
+- **WebSocket hook**: real-time health updates with exponential-backoff reconnect — no polling
 
 ### Node Hierarchy
 
@@ -237,12 +239,12 @@ Edges represent relationships (`contains`, `foreign_key`, `routes_to`, etc.).
 
 **Infrastructure:**
 - Docker + Docker Compose
-- PostgreSQL 17
-- MongoDB 7
-- MySQL 8
-- Redis 7
-- Elasticsearch 8
-- MinIO (S3-compatible)
+
+**Demo stack** (`docker-compose.demo.yml`):
+- PostgreSQL 17, MongoDB 7, MinIO (S3-compatible) + 5 mock HTTP services
+
+**Additional adapters** (covered by testcontainers integration tests, bring your own when running against your stack):
+- MySQL 8, Redis 7, Elasticsearch 8
 
 ---
 
@@ -319,18 +321,26 @@ Returns the full infrastructure graph (nodes + edges).
 Returns details for a specific node.
 
 ### GET `/api/health`
-Returns adapter health status (ok/degraded/error).
+Liveness probe. Returns `{"status":"ok"}`. Per-adapter health metrics are streamed over the WebSocket and merged into node objects on `/api/graph`.
 
 ### WS `/websocket`
-Streams real-time health updates.
+Streams real-time health updates on a 5-second tick, plus a `graph_update` ping when the node set changes.
 
-**Message format:**
+**Message formats:**
 ```json
 {
   "type": "health_update",
-  "nodeId": "postgres",
-  "status": "healthy",
-  "timestamp": "2026-02-09T10:30:00Z"
+  "payload": {
+    "nodeId": "service-postgres",
+    "health": "healthy"
+  }
+}
+```
+
+```json
+{
+  "type": "graph_update",
+  "payload": {}
 }
 ```
 

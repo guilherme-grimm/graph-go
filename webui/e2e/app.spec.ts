@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
 
+type GraphAPIResponse = {
+  data: {
+    nodes: Array<{ id: string }>;
+    edges: Array<{ source: string; target: string }>;
+  };
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 async function waitForGraphReady(page: Page) {
@@ -318,7 +325,9 @@ test.describe('Node Inspector', () => {
     const secondName = await inspector.locator('h2').textContent();
 
     // Names should be different (most likely)
+    expect(firstName).toBeTruthy();
     expect(secondName).toBeTruthy();
+    expect(secondName).not.toBe(firstName);
   });
 
   test('clicking the canvas background deselects the node', async ({ page }) => {
@@ -746,8 +755,8 @@ test.describe('API Integration', () => {
 
   test('edge source and target reference existing nodes', async ({ request }) => {
     const response = await request.get('/api/graph');
-    const body = await response.json();
-    const nodeIds = new Set(body.data.nodes.map((n: any) => n.id));
+    const body = await response.json() as GraphAPIResponse;
+    const nodeIds = new Set(body.data.nodes.map((n) => n.id));
 
     for (const edge of body.data.edges) {
       expect(nodeIds.has(edge.source)).toBeTruthy();

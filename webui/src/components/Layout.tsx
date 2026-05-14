@@ -2,7 +2,8 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GraphCanvas } from './graph';
 import { NodeInspector, SearchOverlay, EdgeInspector } from './panels';
-import HeaderBar, { type Filters, type LayoutMode, nodeSource, type NodeSource } from './HeaderBar';
+import HeaderBar from './HeaderBar';
+import { nodeSource, type Filters, type LayoutMode, type NodeSource } from './HeaderBar.shared';
 import { ErrorBoundary, EmptyState } from './ui';
 import { useWebSocket, useAppShortcuts } from '../hooks';
 import { useGraph as useGraphData } from '../api';
@@ -226,11 +227,12 @@ export default function Layout() {
         onNodeSelect={handleNodeSelect}
       />
 
-      <SearchOverlay
-        isOpen={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        onNodeSelect={handleSearchSelect}
-      />
+      {searchOpen && (
+        <SearchOverlay
+          onClose={() => setSearchOpen(false)}
+          onNodeSelect={handleSearchSelect}
+        />
+      )}
     </div>
   );
 }

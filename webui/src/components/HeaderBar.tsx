@@ -1,25 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { Graph, NodeType, HealthStatus } from '../types';
+import { nodeSource, type Filters, type LayoutMode, type NodeSource } from './HeaderBar.shared';
 import styles from './HeaderBar.module.css';
-
-export type NodeSource = 'docker' | 'kubernetes';
-
-export interface Filters {
-  types: NodeType[];
-  health: HealthStatus[];
-  sources: NodeSource[];
-}
-
-// K8s node types — used to infer source from node type.
-export const K8S_TYPES: ReadonlySet<NodeType> = new Set<NodeType>([
-  'namespace', 'deployment', 'statefulset', 'daemonset', 'pod', 'k8s_service',
-]);
-
-export function nodeSource(type: NodeType): NodeSource {
-  return K8S_TYPES.has(type) ? 'kubernetes' : 'docker';
-}
-
-export type LayoutMode = 'hierarchical' | 'force' | 'swimlane';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 

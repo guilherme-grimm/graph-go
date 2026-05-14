@@ -4,7 +4,6 @@ import type { GraphNode } from '../../types';
 import styles from './SearchOverlay.module.css';
 
 interface SearchOverlayProps {
-  isOpen: boolean;
   onClose: () => void;
   onNodeSelect: (nodeId: string) => void;
 }
@@ -28,7 +27,6 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
 }
 
 export default function SearchOverlay({
-  isOpen,
   onClose,
   onNodeSelect,
 }: SearchOverlayProps) {
@@ -80,24 +78,12 @@ export default function SearchOverlay({
     };
   }, [graph, debouncedQuery, displayLimit]);
 
-  // Focus input when opening
+  // Focus input on mount.
   useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      setDebouncedQuery('');
-      setSelectedIndex(0);
-      // Small delay to ensure animation doesn't conflict
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
-    }
-  }, [isOpen]);
-
-  // Reset selection and display limit when query changes
-  useEffect(() => {
-    setSelectedIndex(0);
-    setDisplayLimit(20);
-  }, [debouncedQuery]);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -141,8 +127,6 @@ export default function SearchOverlay({
     [results, selectedIndex, handleSelect, onClose]
   );
 
-  if (!isOpen) return null;
-
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -156,7 +140,11 @@ export default function SearchOverlay({
             className={styles.input}
             placeholder="Search nodes..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelectedIndex(0);
+              setDisplayLimit(20);
+            }}
             onKeyDown={handleKeyDown}
             role="combobox"
             aria-controls="search-results-list"
@@ -170,7 +158,12 @@ export default function SearchOverlay({
           {query && (
             <button
               className={styles.clearBtn}
-              onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+              onClick={() => {
+                setQuery('');
+                setSelectedIndex(0);
+                setDisplayLimit(20);
+                inputRef.current?.focus();
+              }}
               aria-label="Clear search"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

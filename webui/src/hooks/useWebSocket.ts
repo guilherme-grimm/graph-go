@@ -11,6 +11,7 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
+  const connectRef = useRef<() => void>(() => undefined);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const isDisconnectingRef = useRef(false);
@@ -77,7 +78,9 @@ export function useWebSocket() {
           RECONNECT_DELAYS[Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS.length - 1)];
         reconnectAttemptRef.current++;
 
-        reconnectTimeoutRef.current = setTimeout(connect, delay);
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connectRef.current();
+        }, delay);
       };
 
       ws.onerror = () => {
@@ -85,10 +88,14 @@ export function useWebSocket() {
       };
 
       wsRef.current = ws;
-    } catch (err) {
+    } catch {
       setStatus('error');
     }
   }, [handleMessage]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     isDisconnectingRef.current = true;
@@ -103,8 +110,14 @@ export function useWebSocket() {
   }, []);
 
   useEffect(() => {
-    connect();
-    return disconnect;
+    const timeoutID = setTimeout(() => {
+      connectRef.current();
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutID);
+      disconnect();
+    };
   }, [connect, disconnect]);
 
   return {

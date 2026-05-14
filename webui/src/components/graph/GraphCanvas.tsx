@@ -23,7 +23,7 @@ import { EmptyState } from '../ui';
 import type { Graph, GraphEdge } from '../../types';
 import { calculatePriority, countConnections, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, debounce } from '../../utils';
 import { useLayoutPersistence } from '../../hooks';
-import type { LayoutMode } from '../HeaderBar';
+import type { LayoutMode } from '../HeaderBar.shared';
 import styles from './GraphCanvas.module.css';
 
 const nodeTypes: NodeTypes = {
@@ -403,13 +403,18 @@ function GraphCanvasInner({
     if (prevLayoutModeRef.current === layoutMode) return;
     prevLayoutModeRef.current = layoutMode;
 
-    setIsTransitioning(true);
+    const frame = requestAnimationFrame(() => {
+      setIsTransitioning(true);
+    });
     clearTimeout(transitionTimerRef.current);
     transitionTimerRef.current = setTimeout(() => {
       setIsTransitioning(false);
       fitView({ padding: 0.15, duration: 500 });
     }, 100);
-    return () => clearTimeout(transitionTimerRef.current);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(transitionTimerRef.current);
+    };
   }, [layoutMode, fitView]);
 
   // Memo 1: Expensive layout computation — NOT dependent on selectedNodeId
