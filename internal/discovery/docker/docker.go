@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -52,16 +53,20 @@ func (d *DockerDiscovery) Name() string { return SourceName }
 // NewDockerDiscovery creates a new DockerDiscovery instance and verifies
 // connectivity to the daemon via Ping.
 func NewDockerDiscovery(cfg DockerDiscoveryConfig, logger *zap.SugaredLogger) (*DockerDiscovery, error) {
-	if cfg.Socket == "" {
-		cfg.Socket = "/var/run/docker.sock"
-	}
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
 
 	opts := []client.Opt{
-		client.WithHost("unix://" + cfg.Socket),
 		client.WithAPIVersionNegotiation(),
+	}
+	if cfg.Socket == "" {
+		// Respect DOCKER_HOST/DOCKER_TLS_VERIFY/DOCKER_CERT_PATH and otherwise
+		// fall back to the Docker SDK's platform default (Unix socket on Unix,
+		// named pipe on Windows).
+		opts = append(opts, client.FromEnv)
+	} else {
+		opts = append(opts, client.WithHost(dockerHostFromSocket(cfg.Socket, runtime.GOOS)))
 	}
 
 	cli, err := client.NewClientWithOpts(opts...)
@@ -258,4 +263,14 @@ func isIgnoredImage(image string, ignoreList []string) bool {
 		}
 	}
 	return false
+}
+
+func dockerHostFromSocket(socket, goos string) string {
+	if strings.Contains(socket, "://") {
+		return socket
+	}
+	if goos == "windows" && strings.HasPrefix(socket, `\\`) {
+		return "npipe://" + strings.ReplaceAll(socket, `\`, "/")
+	}
+	return "unix://" + socket
 }

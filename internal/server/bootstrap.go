@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -198,8 +199,25 @@ func buildKubernetesDiscovery(cfg *config.Config, logger *zap.SugaredLogger) *ku
 // If cfg.Docker.Enabled is explicitly set, use that. Otherwise auto-detect
 // by checking if the Docker socket exists.
 func shouldEnableDocker(cfg *config.Config) bool {
+	return shouldEnableDockerForOS(cfg, runtime.GOOS, os.Stat, os.Getenv)
+}
+
+func shouldEnableDockerForOS(cfg *config.Config, goos string, stat func(string) (os.FileInfo, error), getenv func(string) string) bool {
 	if cfg.Docker.Enabled != nil {
 		return *cfg.Docker.Enabled
+	}
+
+	// If DOCKER_HOST is set, let the Docker SDK try that host. This keeps
+	// auto-detection aligned with Docker CLI/SDK behavior.
+	if getenv("DOCKER_HOST") != "" {
+		return true
+	}
+
+	// Windows Docker Desktop uses a named pipe rather than a Unix socket. Named
+	// pipes are not reliably discoverable with os.Stat, so attempt discovery and
+	// let the existing Docker client ping path warn-and-skip if Docker is absent.
+	if goos == "windows" {
+		return true
 	}
 
 	socket := "/var/run/docker.sock"
@@ -207,6 +225,6 @@ func shouldEnableDocker(cfg *config.Config) bool {
 		socket = cfg.Docker.Socket
 	}
 
-	_, err := os.Stat(socket)
+	_, err := stat(socket)
 	return err == nil
 }
