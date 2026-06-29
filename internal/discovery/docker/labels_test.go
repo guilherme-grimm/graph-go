@@ -124,6 +124,14 @@ func TestApplyLabelOverrides_LegacyNamespace(t *testing.T) {
 		}
 	})
 
+	t.Run("legacy node-type override", func(t *testing.T) {
+		labels := map[string]string{"graphinfo.node-type": "gateway"}
+		_, resultCfg := ApplyLabelOverrides(labels, TypeHTTP, adapters.ConnectionConfig{})
+		if resultCfg["node_type"] != "gateway" {
+			t.Errorf("expected legacy node_type override, got %v", resultCfg["node_type"])
+		}
+	})
+
 	t.Run("legacy name override", func(t *testing.T) {
 		labels := map[string]string{"graphinfo.name": "legacy-name"}
 		_, resultCfg := ApplyLabelOverrides(labels, TypeHTTP, adapters.ConnectionConfig{})
