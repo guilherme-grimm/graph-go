@@ -16,6 +16,9 @@ func TestShouldIgnore(t *testing.T) {
 		{"ignore True", map[string]string{"graphgo.ignore": "True"}, true},
 		{"ignore TRUE", map[string]string{"graphgo.ignore": "TRUE"}, true},
 		{"ignore false", map[string]string{"graphgo.ignore": "false"}, false},
+		{"legacy ignore true", map[string]string{"graphinfo.ignore": "true"}, true},
+		{"legacy ignore false", map[string]string{"graphinfo.ignore": "false"}, false},
+		{"graphgo wins over legacy when both set", map[string]string{"graphgo.ignore": "false", "graphinfo.ignore": "true"}, false},
 		{"no label", map[string]string{}, false},
 		{"other labels", map[string]string{"com.docker.compose.service": "foo"}, false},
 	}
@@ -100,4 +103,53 @@ func TestApplyLabelOverrides_NoLabels(t *testing.T) {
 	if resultCfg["dsn"] != "original" {
 		t.Errorf("expected config unchanged, got %v", resultCfg["dsn"])
 	}
+}
+
+// TestApplyLabelOverrides_LegacyNamespace covers the deprecation window:
+// graphinfo.* is still accepted, and graphgo.* wins when both are set.
+func TestApplyLabelOverrides_LegacyNamespace(t *testing.T) {
+	t.Run("legacy type override", func(t *testing.T) {
+		labels := map[string]string{"graphinfo.type": "postgres"}
+		resultType, _ := ApplyLabelOverrides(labels, TypeHTTP, adapters.ConnectionConfig{})
+		if resultType != TypePostgres {
+			t.Errorf("expected legacy label to override type, got %s", resultType)
+		}
+	})
+
+	t.Run("legacy DSN override", func(t *testing.T) {
+		labels := map[string]string{"graphinfo.dsn": "postgres://legacy:pass@host:5432/db"}
+		_, resultCfg := ApplyLabelOverrides(labels, TypePostgres, adapters.ConnectionConfig{})
+		if resultCfg["dsn"] != "postgres://legacy:pass@host:5432/db" {
+			t.Errorf("expected legacy DSN override, got %v", resultCfg["dsn"])
+		}
+	})
+
+	t.Run("legacy name override", func(t *testing.T) {
+		labels := map[string]string{"graphinfo.name": "legacy-name"}
+		_, resultCfg := ApplyLabelOverrides(labels, TypeHTTP, adapters.ConnectionConfig{})
+		if resultCfg["name"] != "legacy-name" {
+			t.Errorf("expected legacy name override, got %v", resultCfg["name"])
+		}
+	})
+
+	t.Run("graphgo takes precedence over legacy", func(t *testing.T) {
+		labels := map[string]string{
+			"graphgo.type":        "postgres",
+			"graphinfo.type":      "mongodb",
+			"graphgo.name":        "new-name",
+			"graphinfo.name":      "old-name",
+			"graphgo.node-type":   "gateway",
+			"graphinfo.node-type": "api",
+		}
+		resultType, resultCfg := ApplyLabelOverrides(labels, TypeHTTP, adapters.ConnectionConfig{})
+		if resultType != TypePostgres {
+			t.Errorf("expected graphgo.type to win, got %s", resultType)
+		}
+		if resultCfg["name"] != "new-name" {
+			t.Errorf("expected graphgo.name to win, got %v", resultCfg["name"])
+		}
+		if resultCfg["node_type"] != "gateway" {
+			t.Errorf("expected graphgo.node-type to win, got %v", resultCfg["node_type"])
+		}
+	})
 }
