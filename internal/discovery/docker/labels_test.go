@@ -12,10 +12,10 @@ func TestShouldIgnore(t *testing.T) {
 		labels map[string]string
 		want   bool
 	}{
-		{"ignore true", map[string]string{"graphinfo.ignore": "true"}, true},
-		{"ignore True", map[string]string{"graphinfo.ignore": "True"}, true},
-		{"ignore TRUE", map[string]string{"graphinfo.ignore": "TRUE"}, true},
-		{"ignore false", map[string]string{"graphinfo.ignore": "false"}, false},
+		{"ignore true", map[string]string{"graphgo.ignore": "true"}, true},
+		{"ignore True", map[string]string{"graphgo.ignore": "True"}, true},
+		{"ignore TRUE", map[string]string{"graphgo.ignore": "TRUE"}, true},
+		{"ignore false", map[string]string{"graphgo.ignore": "false"}, false},
 		{"no label", map[string]string{}, false},
 		{"other labels", map[string]string{"com.docker.compose.service": "foo"}, false},
 	}
@@ -32,7 +32,7 @@ func TestShouldIgnore(t *testing.T) {
 
 func TestApplyLabelOverrides_Type(t *testing.T) {
 	labels := map[string]string{
-		"graphinfo.type": "postgres",
+		"graphgo.type": "postgres",
 	}
 	cfg := adapters.ConnectionConfig{"endpoint": "http://foo:8080"}
 
@@ -44,7 +44,7 @@ func TestApplyLabelOverrides_Type(t *testing.T) {
 
 func TestApplyLabelOverrides_DSN_Postgres(t *testing.T) {
 	labels := map[string]string{
-		"graphinfo.dsn": "postgres://custom:pass@host:5432/db",
+		"graphgo.dsn": "postgres://custom:pass@host:5432/db",
 	}
 	cfg := adapters.ConnectionConfig{"dsn": "original"}
 
@@ -56,7 +56,7 @@ func TestApplyLabelOverrides_DSN_Postgres(t *testing.T) {
 
 func TestApplyLabelOverrides_DSN_MongoDB(t *testing.T) {
 	labels := map[string]string{
-		"graphinfo.dsn": "mongodb://custom:pass@host:27017",
+		"graphgo.dsn": "mongodb://custom:pass@host:27017",
 	}
 	cfg := adapters.ConnectionConfig{"uri": "original"}
 
@@ -68,7 +68,7 @@ func TestApplyLabelOverrides_DSN_MongoDB(t *testing.T) {
 
 func TestApplyLabelOverrides_NodeType(t *testing.T) {
 	labels := map[string]string{
-		"graphinfo.node-type": "gateway",
+		"graphgo.node-type": "gateway",
 	}
 	cfg := adapters.ConnectionConfig{}
 
@@ -80,7 +80,7 @@ func TestApplyLabelOverrides_NodeType(t *testing.T) {
 
 func TestApplyLabelOverrides_Name(t *testing.T) {
 	labels := map[string]string{
-		"graphinfo.name": "custom-name",
+		"graphgo.name": "custom-name",
 	}
 	cfg := adapters.ConnectionConfig{}
 

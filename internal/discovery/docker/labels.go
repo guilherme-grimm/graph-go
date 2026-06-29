@@ -7,20 +7,20 @@ import (
 )
 
 const (
-	LabelIgnore   = "graphinfo.ignore"
-	LabelType     = "graphinfo.type"
-	LabelDSN      = "graphinfo.dsn"
-	LabelNodeType = "graphinfo.node-type"
-	LabelName     = "graphinfo.name"
+	LabelIgnore   = "graphgo.ignore"
+	LabelType     = "graphgo.type"
+	LabelDSN      = "graphgo.dsn"
+	LabelNodeType = "graphgo.node-type"
+	LabelName     = "graphgo.name"
 )
 
-// ShouldIgnore returns true if the container has graphinfo.ignore=true.
+// ShouldIgnore returns true if the container has graphgo.ignore=true.
 func ShouldIgnore(labels map[string]string) bool {
 	v, ok := labels[LabelIgnore]
 	return ok && strings.EqualFold(v, "true")
 }
 
-// ApplyLabelOverrides applies graphinfo.* label overrides to the detected
+// ApplyLabelOverrides applies graphgo.* label overrides to the detected
 // service type and connection config. Returns the (possibly modified) type
 // and config.
 func ApplyLabelOverrides(labels map[string]string, detectedType ServiceType, config adapters.ConnectionConfig) (ServiceType, adapters.ConnectionConfig) {

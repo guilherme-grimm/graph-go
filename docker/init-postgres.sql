@@ -1,4 +1,4 @@
--- Seed data for graph-info development environment
+-- Seed data for graph-go development environment
 -- Creates a small e-commerce schema so the graph has real nodes to display.
 
 CREATE TABLE IF NOT EXISTS users (
