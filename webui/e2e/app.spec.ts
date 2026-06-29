@@ -14,7 +14,7 @@ test.describe('Page Load', () => {
     await page.goto('/');
     // Header with app name
     await expect(page.locator('header')).toBeVisible();
-    await expect(page.locator('header')).toContainText('graph-info');
+    await expect(page.locator('header')).toContainText('graph-go');
   });
 
   test('loads graph data from API and renders nodes', async ({ page }) => {
@@ -94,7 +94,7 @@ test.describe('Header Bar', () => {
     // WebSocket connection hasn't been established by render time.
     // This test checks if the indicator appears within a reasonable timeout.
     const appName = page.locator('header span').first();
-    await expect(appName).toContainText('graph-info');
+    await expect(appName).toContainText('graph-go');
 
     // Check if wsIndicator child span exists (it's a 6x6px dot inside the app name span)
     const wsIndicator = appName.locator('span');

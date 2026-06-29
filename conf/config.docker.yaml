@@ -1,4 +1,4 @@
-# Docker Compose configuration for graph-info
+# Docker Compose configuration for graph-go
 # Uses Compose service names as hostnames.
 
 connections:
@@ -6,11 +6,11 @@ connections:
 
   - name: postgres
     type: postgres
-    dsn: "postgres://graphinfo:graphinfo@postgres:5432/mydb?sslmode=disable"
+    dsn: "postgres://graphgo:graphgo@postgres:5432/mydb?sslmode=disable"
 
   - name: mongodb
     type: mongodb
-    uri: "mongodb://graphinfo:graphinfo@mongo:27017"
+    uri: "mongodb://graphgo:graphgo@mongo:27017"
 
   - name: minio
     type: s3

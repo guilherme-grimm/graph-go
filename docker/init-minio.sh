@@ -1,5 +1,5 @@
 #!/bin/sh
-# Seed data for graph-info development environment.
+# Seed data for graph-go development environment.
 # Creates buckets and sample prefixes in MinIO using the mc CLI.
 
 set -e

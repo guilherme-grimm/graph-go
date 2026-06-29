@@ -1,4 +1,4 @@
-// Seed data for graph-info development environment.
+// Seed data for graph-go development environment.
 // MongoDB executes /docker-entrypoint-initdb.d/*.js against the MONGO_INITDB_DATABASE.
 
 // Switch to 'store' database

@@ -182,7 +182,7 @@ export default function HeaderBar({ graph, filteredGraph, onSearchOpen, filters,
   return (
     <header className={styles.header}>
       <span className={styles.appName}>
-        graph-info
+        graph-go
         {wsStatus && (
           <span
             className={`${styles.wsIndicator} ${styles[`ws_${wsStatus}`]}`}
