@@ -1,10 +1,55 @@
-# graph-info Adapter Configuration
+# graph-go Configuration
 #
-# This file defines the data sources that graph-info will connect to and visualize.
-# Copy this file to config.yaml and fill in your connection details.
+# This file defines the server settings, discovery options, and the data sources
+# that graph-go will connect to and visualize. Copy this file to config.yaml and
+# fill in your connection details.
+#
+# Auto-discovery is the default path — mount the Docker socket and/or run inside
+# Kubernetes and graph-go discovers your infrastructure with NO config file.
+# Use this file only as an escape hatch for services discovery can't reach:
+# remote databases, managed cloud services, external endpoints.
 #
 # IMPORTANT: This tool is intended for authorized infrastructure visualization and
 # monitoring. Only configure connections to systems you own or have permission to access.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Server
+# ─────────────────────────────────────────────────────────────────────────────
+# HTTP server settings. All fields optional; defaults shown.
+#
+# server:
+#   port: 8080                              # bind port (or set PORT env var)
+#   allowed_origins:                        # CORS allowlist for /api/* and /websocket
+#     - "http://localhost:5173"             # Vite dev server
+#     - "https://ops.example.com"           # any explicit origin you serve the UI from
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Docker discovery
+# ─────────────────────────────────────────────────────────────────────────────
+# graph-go reads the Docker socket (mounted read-only). All fields optional;
+# omitted values fall back to auto-detection.
+#
+# docker:
+#   enabled: true                           # nil = auto-detect (default); force on/off
+#   socket: /var/run/docker.sock            # default: /var/run/docker.sock
+#   network: graph-go                       # limit discovery to a single Docker network
+#   ignore_images:                          # skip containers whose image matches any entry
+#     - "grafana/grafana"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kubernetes discovery
+# ─────────────────────────────────────────────────────────────────────────────
+# graph-go uses in-cluster credentials by default, falling back to kubeconfig.
+# Set enabled: false to disable K8s discovery even when running in a cluster.
+# All fields optional.
+#
+# kubernetes:
+#   enabled: true                           # nil = auto-detect (default)
+#   kubeconfig: ~/.kube/config              # path override; empty = default lookup (~/.kube/config or KUBECONFIG)
+#   context: my-cluster                     # empty = current context
+#   namespaces:                             # empty = all namespaces
+#     - default
+#     - production
 
 connections:
   # ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +76,28 @@ connections:
     #   application_name: Name shown in pg_stat_activity
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # MySQL Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Discovers databases, tables, and foreign key relationships.
+  #
+  # Required fields:
+  #   - name: Unique identifier for this connection
+  #   - type: Must be "mysql"
+  #   - dsn:  MySQL connection string (format: user:pass@tcp(host:port)/db?params)
+  #
+  # The adapter will:
+  #   - Create a database node
+  #   - Discover tables in each accessible database
+  #   - Map foreign key relationships as edges
+  #
+  # - name: mysql
+  #   type: mysql
+  #   dsn: "user:password@tcp(localhost:3306)/mydb?parseTime=true"
+  #   # DSN params:
+  #   #   parseTime: parse DATE/DATETIME into time.Time (recommended)
+  #   #   timeout: dial timeout (e.g., 10s)
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # MongoDB Adapter
   # ─────────────────────────────────────────────────────────────────────────────
   # Discovers databases and collections (excludes system databases: admin, config, local).
@@ -53,6 +120,55 @@ connections:
     #   replicaSet: Replica set name for clustered deployments
     #   tls: Enable TLS (true/false)
     #   connectTimeoutMS: Connection timeout in milliseconds
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Redis Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Discovers keyspaces and active key distribution via INFO keyspace.
+  #
+  # Required fields:
+  #   - name: Unique identifier for this connection
+  #   - type: Must be "redis"
+  #   - uri:  Redis connection URI (mutually exclusive with endpoint)
+  #   OR
+  #   - endpoint: host:port (e.g., localhost:6379) — paired with password below
+  #   - password: optional, for AUTH (only used with endpoint)
+  #
+  # The adapter will:
+  #   - List keyspaces with key counts from INFO keyspace
+  #   - Create a keyspace node per keyspace
+  #   - Report health based on PING
+  #
+  # - name: redis
+  #   type: redis
+  #   uri: "redis://:password@localhost:6379"
+  #   # --- OR (host/port style) ---
+  #   # endpoint: "localhost:6379"
+  #   # password: "secret"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Elasticsearch Adapter
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Discovers indices, cluster health, and shard status.
+  #
+  # Required fields:
+  #   - name: Unique identifier for this connection
+  #   - type: Must be "elasticsearch"
+  #   - endpoint: Elasticsearch URL (e.g., http://localhost:9200 or https://...)
+  # Optional:
+  #   - username: basic-auth username
+  #   - password: basic-auth password
+  #
+  # The adapter will:
+  #   - Create an index node per index
+  #   - Surface cluster health (green/yellow/red) as the service health
+  #   - Report shard status metadata
+  #
+  # - name: elasticsearch
+  #   type: elasticsearch
+  #   endpoint: "http://localhost:9200"
+  #   username: "elastic"
+  #   password: "secret"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # S3 / AWS Adapter
@@ -147,14 +263,14 @@ connections:
 #    - Appear in logs and error messages
 #
 # 2. Health Checks:
-#    - Each adapter pings its service every 5 seconds
+#    - Each adapter pings its service on a health sweep
 #    - Health status is streamed to the frontend via WebSocket
 #    - Status values: healthy, degraded, unhealthy
 #
 # 3. Caching:
 #    - Graph discovery results are cached for 30 seconds
-#    - Reduces load on databases and APIs
-#    - Cache is invalidated on adapter registration
+#    - Health is cached for 10 seconds
+#    - Caches are invalidated on adapter registration and discovery events
 #
 # 4. Security:
 #    - Store credentials in environment variables for production

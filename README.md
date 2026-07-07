@@ -19,7 +19,7 @@ graph-go is a **CLI-first infrastructure mapper**. It auto-discovers your infras
 |---|---|
 | **Auto-discovery** | Detects infrastructure from Docker containers and Kubernetes clusters — no manual inventory needed |
 | **Kubernetes** | Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services — with informer-based real-time watching |
-| **Docker** | Classifies running containers, extracts credentials, watches Docker events for live topology changes |
+| **Docker** | Classifies running containers, extracts credentials, watches Docker events, honors `graphgo.*` labels to override type/DSN/node-type/name or ignore a container |
 | **PostgreSQL** | Tables, foreign key relationships, schema topology |
 | **MongoDB** | Databases and collections |
 | **MySQL** | Tables, foreign key relationships |
@@ -29,6 +29,20 @@ graph-go is a **CLI-first infrastructure mapper**. It auto-discovers your infras
 | **HTTP services** | Health endpoints, dependency mapping between services |
 | **Real-time health** | WebSocket-powered live status updates every 5 seconds |
 | **Interactive graph** | Swimlane layout, namespace group containers, pan/zoom, filter by type/health, search nodes |
+
+### Docker labels
+
+graph-go respects a small set of `graphgo.*` container labels (set them on any container you want to control):
+
+| Label | Effect |
+|---|---|
+| `graphgo.ignore=true` | Skip this container entirely |
+| `graphgo.type=postgres` | Force the adapter type (`postgres`, `mongodb`, `mysql`, `redis`, `elasticsearch`, `s3`, `http`) |
+| `graphgo.dsn=...` | Inject a connection string (DSN for postgres/mysql, URI for mongodb, falls back to `dsn` otherwise) |
+| `graphgo.node-type=gateway` | Override the visual node type (`service`, `gateway`, `auth`, `api`, `queue`, `cache`) |
+| `graphgo.name=...` | Override the node name shown in the graph and used in node IDs / logs |
+
+Use these to rescue misclassified containers, point graph-go at a custom DSN, or hide a container from the graph without removing it.
 
 ---
 
@@ -79,8 +93,9 @@ For services that live outside Docker/Kubernetes (remote databases, managed clou
 Single self-contained binary — UI is embedded, but the entrypoint is still the CLI.
 
 ```bash
-# Linux amd64
-curl -sL https://github.com/guilherme-grimm/graph-go/releases/latest/download/graph-go_linux_amd64.tar.gz | tar xz
+# Linux amd64 (requires the GitHub CLI; browse Releases for other platforms)
+gh release download --repo guilherme-grimm/graph-go --pattern 'graph-go_*_linux_amd64.tar.gz' --clobber
+tar xzf graph-go_*_linux_amd64.tar.gz
 ./graph-go serve   # or just `./graph-go` - same thing
 ```
 
@@ -96,6 +111,7 @@ Open **http://localhost:8080**. Other platforms on the [Releases page](https://g
 | `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). |
 | `graph-go scan` | Run discovery once and emit the graph as JSON to stdout. Useful for piping into `jq`, CI checks, or one-shot exports. |
 | `graph-go version` | Print version, commit, and build date. |
+| `graph-go --health-check` | Hit local `/health` and exit `0`/`1`. Used by the container `HEALTHCHECK`; not for interactive use. |
 
 Global flags (apply to every subcommand): `--config`, `--log-level`, `--log-format`. See `graph-go <command> --help` for the full per-command surface.
 
@@ -121,7 +137,7 @@ Typical flow:
 
 Auto-discovery is the path. Mount the Docker socket and/or run inside a Kubernetes cluster — graph-go discovers your infrastructure with **no config file needed**.
 
-Use the YAML config (`conf/config.yaml`) only as an escape hatch for services that aren't reachable via discovery — remote databases, managed cloud services, external endpoints. See [`conf/config.sample.yaml`](conf/config.sample.yaml) for the full schema and examples for every adapter.
+Use the YAML config (`conf/config.yaml`) only as an escape hatch for services that aren't reachable via discovery — remote databases, managed cloud services, external endpoints. See [`conf/config.sample.yaml`](conf/config.sample.yaml) for the full schema — examples for every adapter and every config block (`server`, `docker`, `kubernetes`, `connections`).
 
 To use a config file with the Docker run above:
 
@@ -231,8 +247,8 @@ Edges represent relationships (`contains`, `foreign_key`, `routes_to`, etc.).
 
 **Frontend:**
 - TypeScript
-- React 18
-- React Flow (graph visualization)
+- React 19
+- @xyflow/react v12 (graph visualization)
 - Vite (build tool)
 
 **Infrastructure:**
@@ -322,15 +338,25 @@ Returns details for a specific node.
 Returns adapter health status (ok/degraded/error).
 
 ### WS `/websocket`
-Streams real-time health updates.
+Streams real-time updates. Two message types are emitted, both wrapped as `{ "type": "...", "payload": { ... } }`. There is no `timestamp` field — clients infer ordering by arrival.
 
-**Message format:**
+**`health_update`** — sent for every node once per sweep (every 5s). Adapter-owned nodes get health via the adapter lookup; topology nodes (e.g. Kubernetes resources) carry health directly on the node.
 ```json
 {
   "type": "health_update",
-  "nodeId": "postgres",
-  "status": "healthy",
-  "timestamp": "2026-02-09T10:30:00Z"
+  "payload": {
+    "nodeId": "service-postgres",
+    "health": "healthy"
+  }
+}
+```
+`health` is one of `healthy`, `degraded`, `unhealthy`.
+
+**`graph_update`** — sent when the set of node IDs changes (a node was added or removed by discovery). `payload` is empty; clients should re-fetch `/api/graph`.
+```json
+{
+  "type": "graph_update",
+  "payload": {}
 }
 ```
 
