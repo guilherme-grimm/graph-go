@@ -12,7 +12,7 @@
 - PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, S3/MinIO, HTTP adapters.
 
 ### Integration & Contract Tests
-- Integration tests using `testcontainers-go` for all adapters (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, S3/MinIO).
+- Integration tests using `testcontainers-go` for all container-backed adapters (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, S3/MinIO). The HTTP adapter has no tests yet — see Deferred.
 - Shared contract test suite (`adaptertest.RunContractTests`) — validates Adapter interface compliance.
 - Build tag `//go:build integration` keeps tests out of `go test ./...`; CI runs them separately.
 - Contract tests are a documented requirement for all new adapters.
@@ -93,6 +93,10 @@
 - Re-merge YAML config + Docker discovery and re-register adapters without restart.
 - Mirrors the existing Docker event-watcher pattern in `internal/discovery/docker/events.go`.
 
+### HTTP Adapter Tests
+- `internal/adapters/http/` has no test coverage today (found 2026-07-09).
+- Run the shared contract suite (`adaptertest.RunContractTests`) against an `httptest.Server`; no container needed.
+
 ### Bearer Token Auth
 - Optional static token via `GRAPHGO_TOKEN` env var.
 - If set: all `/api/*` and `/websocket` routes require `Authorization: Bearer <token>`.
@@ -111,12 +115,12 @@ Ordered by dependency and DX impact — earlier items unblock later ones.
 4. **K8s adapter bridging** — closes the gap between K8s topology and adapter-bridged discovery; required before flow observability is meaningful inside a cluster.
 5. **Message broker adapters (Phase 1)** — Kafka first; structural topology.
 6. **Stress test mode** — load substrate for flow observability.
-7. **Flow observability** — the major milestone; consumes stress + broker flow inference + topology.
-8. **Message broker flow inference (Phase 2)** — deepens broker adapters into flow understanding.
+7. **Message broker flow inference (Phase 2)** — deepens broker adapters into flow understanding.
+8. **Flow observability** — the major milestone; consumes stress + broker flow inference + topology.
 9. **Graph persistence** — usability for teams over time.
 10. **Multi-region visualization** — scale-out usability.
 11. **Alert configuration per node** — closes the monitoring loop.
-12. **Polish phase**: hot reload, bearer token auth.
+12. **Polish phase**: hot reload, bearer token auth, HTTP adapter tests.
 
 ---
 

@@ -44,19 +44,19 @@ projects. We chose zap because:
 1. **Structured sugar pattern already prototyped.** Before the rework landed,
    the codebase had a SugaredLogger threading pattern in flight. Standardizing
    on it avoided a second rewrite.
-2. **Ergonomic structured fields.** `logger.Infow("discovery complete", "adapter", "postgres", "tables", 12)`
+2. **Ergonomic structured fields.** `logger.Debugw("discovery complete", "adapter", "postgres", "tables", 12)`
    reads better than the slog equivalent for the per-event adapter/discovery
    logging that runs at debug level on the hot path.
 3. **Concurrency-safe core by construction.** The `SugaredLogger` is safe to
    share across goroutines (the registry, the WS handler, and per-adapter
    discovery all share one).
-4. **Cheap `With(...)` for child loggers.** Adapters name subloggers off the
+4. **Cheap child loggers via `Named(...)`.** Adapters name subloggers off the
    injected logger (`logger.Named("postgres")`), giving every line a stable
    component tag without extra plumbing.
 5. **Performance headroom.** zap's zero-allocation core leaves room for the
    verbose debug logging the discovery loop emits without GC pressure at scale.
 
-`slog` would have delivered 1, 3, and 5 with stdlib purity; the deciding factors
+`slog` would have delivered 3 and 5 with stdlib purity; the deciding factors
 were 2 (sugar ergonomics the team is fluent in) and the existing prototype.
 
 ## Consequences
