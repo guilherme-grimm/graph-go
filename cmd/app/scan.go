@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/guilherme-grimm/graph-go/internal/adapters/catalog"
 	"github.com/guilherme-grimm/graph-go/internal/config"
 	"github.com/guilherme-grimm/graph-go/internal/logging"
 	"github.com/guilherme-grimm/graph-go/internal/server"
@@ -59,7 +60,7 @@ func runScan(configPath, logLevel, logFormat, format string, withHealth, pretty 
 		cfg = &config.Config{}
 	}
 
-	reg, _, cleanup := server.BuildRegistry(cfg, logger)
+	reg, _, cleanup := server.BuildRegistry(cfg, logger, catalog.Default())
 	defer cleanup()
 
 	if err := server.WriteGraphJSON(os.Stdout, reg, withHealth, pretty); err != nil {

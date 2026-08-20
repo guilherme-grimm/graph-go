@@ -17,10 +17,6 @@ import (
 
 var _ adapters.Adapter = (*adapter)(nil)
 
-func init() {
-	adapters.RegisterFactory("mysql", func(l *zap.SugaredLogger) adapters.Adapter { return New(l) })
-}
-
 type adapter struct {
 	db     *sql.DB
 	dsn    string

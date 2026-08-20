@@ -13,15 +13,6 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
-
-	// Self-registering adapters
-	_ "github.com/guilherme-grimm/graph-go/internal/adapters/elasticsearch"
-	_ "github.com/guilherme-grimm/graph-go/internal/adapters/http"
-	_ "github.com/guilherme-grimm/graph-go/internal/adapters/mongodb"
-	_ "github.com/guilherme-grimm/graph-go/internal/adapters/mysql"
-	_ "github.com/guilherme-grimm/graph-go/internal/adapters/postgres"
-	_ "github.com/guilherme-grimm/graph-go/internal/adapters/redis"
-	_ "github.com/guilherme-grimm/graph-go/internal/adapters/s3"
 )
 
 type Server struct {
@@ -33,7 +24,10 @@ type Server struct {
 
 // NewServer returns the HTTP server and a cleanup function that should
 // be called during graceful shutdown to close adapter connections.
-func NewServer(cfg *config.Config, logger *zap.SugaredLogger) (*http.Server, func()) {
+//
+// cat supplies the adapters this binary supports; build it at the composition
+// root (see internal/adapters/catalog).
+func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (*http.Server, func()) {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -50,7 +44,7 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger) (*http.Server, fun
 		allowedOrigins = []string{"http://localhost:3000", "http://localhost:5173"}
 	}
 
-	reg, discoverers, regCleanup := BuildRegistry(cfg, logger)
+	reg, discoverers, regCleanup := BuildRegistry(cfg, logger, cat)
 
 	// Start a Watch() goroutine for each discoverer. Topology-oriented
 	// discoverers refresh their topology on each callback; adapter-oriented
@@ -58,7 +52,7 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger) (*http.Server, fun
 	watchCtx, watchCancel := context.WithCancel(context.Background())
 	for _, d := range discoverers {
 		d := d
-		onChange := buildOnChange(watchCtx, d, reg, logger)
+		onChange := buildOnChange(watchCtx, d, reg, cat, logger)
 		go func() {
 			if err := d.Watch(watchCtx, onChange); err != nil {
 				logger.Warnw("discoverer watch stopped", "discoverer", d.Name(), "err", err)
@@ -94,7 +88,7 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger) (*http.Server, fun
 // discoverers that produce topology ServiceInfo, it re-reads their snapshot
 // and replaces the registry topology before invalidating caches. For pure
 // adapter discoverers, it just invalidates the cache.
-func buildOnChange(ctx context.Context, d discovery.Discoverer, reg adapters.Registry, logger *zap.SugaredLogger) func() {
+func buildOnChange(ctx context.Context, d discovery.Discoverer, reg adapters.Registry, cat adapters.Catalog, logger *zap.SugaredLogger) func() {
 	return func() {
 		fresh, err := d.Discover(ctx)
 		if err != nil {
@@ -116,6 +110,6 @@ func buildOnChange(ctx context.Context, d discovery.Discoverer, reg adapters.Reg
 			reg.SetTopology(d.Name(), topoNodes, topoEdges)
 			return
 		}
-		applyServices(reg, fresh, logger)
+		applyServices(reg, cat, fresh, logger)
 	}
 }

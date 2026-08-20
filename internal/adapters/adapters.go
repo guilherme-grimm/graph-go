@@ -1,4 +1,5 @@
-// Package adapters defines the Adapter interface and factory registry.
+// Package adapters defines the Adapter interface, the Catalog of adapter
+// constructors, and the Registry that holds live adapter instances.
 //
 // When adding a new adapter, you MUST also add an integration test using the
 // adaptertest.RunContractTests suite. See adaptertest package for instructions.
@@ -6,7 +7,7 @@ package adapters
 
 import (
 	"fmt"
-	"sync"
+	"maps"
 
 	"go.uber.org/zap"
 
@@ -39,24 +40,28 @@ type Adapter interface {
 // The logger is always non-nil; adapters may ignore it or name subloggers off it.
 type AdapterConstructor func(logger *zap.SugaredLogger) Adapter
 
-var (
-	factoryMu sync.RWMutex
-	factories = make(map[string]AdapterConstructor)
-)
-
-// RegisterFactory registers an adapter constructor for the given connection type.
-// Adapter packages call this from init() to self-register.
-func RegisterFactory(connType string, ctor AdapterConstructor) {
-	factoryMu.Lock()
-	defer factoryMu.Unlock()
-	factories[connType] = ctor
+// Catalog is the set of adapter constructors a binary knows how to build,
+// keyed by connection type. It is immutable: build one with NewCatalog at the
+// composition root and pass it down. Because it is never mutated after
+// construction it needs no locking.
+//
+// Catalog is deliberately not user-facing — it is decided at compile time, not
+// from config. See ADR-0002.
+type Catalog struct {
+	ctors map[string]AdapterConstructor
 }
 
-// NewAdapter creates a new adapter instance for the given connection type.
-func NewAdapter(connType string, logger *zap.SugaredLogger) (Adapter, error) {
-	factoryMu.RLock()
-	defer factoryMu.RUnlock()
-	ctor, ok := factories[connType]
+// NewCatalog returns a Catalog over a copy of ctors. A nil map yields an empty
+// Catalog, for which every New call reports an unknown adapter type.
+func NewCatalog(ctors map[string]AdapterConstructor) Catalog {
+	owned := make(map[string]AdapterConstructor, len(ctors))
+	maps.Copy(owned, ctors)
+	return Catalog{ctors: owned}
+}
+
+// New creates a new adapter instance for the given connection type.
+func (c Catalog) New(connType string, logger *zap.SugaredLogger) (Adapter, error) {
+	ctor, ok := c.ctors[connType]
 	if !ok {
 		return nil, fmt.Errorf("unknown adapter type %q", connType)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"github.com/guilherme-grimm/graph-go/internal/adapters/catalog"
 	"github.com/guilherme-grimm/graph-go/internal/config"
 	"github.com/guilherme-grimm/graph-go/internal/logging"
 	"github.com/guilherme-grimm/graph-go/internal/server"
@@ -84,7 +85,7 @@ func runServe(configPath, logLevel, logFormat string) error {
 
 	applyServerEnv(&cfg.Server)
 
-	srv, cleanup := server.NewServer(cfg, logger)
+	srv, cleanup := server.NewServer(cfg, logger, catalog.Default())
 	done := make(chan bool, 1)
 
 	go gracefulShutdown(srv, cleanup, logger, done)

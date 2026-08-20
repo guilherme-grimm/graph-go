@@ -23,8 +23,12 @@ import (
 // auto-discovered services to the registry, and returns a cleanup func
 // that closes discoverers and the registry in the correct order.
 //
+// cat supplies the adapters this binary supports; build it at the composition
+// root (see internal/adapters/catalog). An empty Catalog is legal and yields a
+// registry with no adapters — every service is logged and skipped.
+//
 // It does NOT start Watch() loops — that's NewServer's job.
-func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger) (adapters.Registry, []discovery.Discoverer, func()) {
+func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (adapters.Registry, []discovery.Discoverer, func()) {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -54,7 +58,7 @@ func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger) (adapters.Regi
 	}
 	services = discovery.MergeWithYAML(services, yamlEntries)
 
-	applyServices(reg, services, logger)
+	applyServices(reg, cat, services, logger)
 
 	cleanup := func() {
 		for _, d := range discoverers {
@@ -74,7 +78,7 @@ func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger) (adapters.Regi
 // pre-built Nodes, like Kubernetes resources) and adapter-bound ones, then
 // pushes each into the registry appropriately. Topology entries are grouped
 // by Source so a later refresh can replace them atomically.
-func applyServices(reg adapters.Registry, services []discovery.ServiceInfo, logger *zap.SugaredLogger) {
+func applyServices(reg adapters.Registry, cat adapters.Catalog, services []discovery.ServiceInfo, logger *zap.SugaredLogger) {
 	topologyBySource := make(map[string]*struct {
 		nodes []nodes.Node
 		edges []edges.Edge
@@ -94,7 +98,7 @@ func applyServices(reg adapters.Registry, services []discovery.ServiceInfo, logg
 			continue
 		}
 
-		adapter, err := adapters.NewAdapter(svc.Type, logger)
+		adapter, err := cat.New(svc.Type, logger)
 		if err != nil {
 			logger.Warnw("skipping service: unknown adapter type", "service", svc.Name, "type", svc.Type, "err", err)
 			continue
