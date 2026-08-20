@@ -99,8 +99,31 @@ cd webui && npx tsc --noEmit
 - [ ] `go test -tags=integration -timeout=5m ./internal/adapters/...` passes (if touching adapters)
 - [ ] `npx tsc --noEmit` passes
 - [ ] Commit messages use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`)
+- [ ] Commits are signed and show GitHub's **Verified** badge (see [Signing Commits](#signing-commits))
 - [ ] New adapters include discovery logic, health checks, **and integration tests**
 - [ ] Documentation updated if applicable
+
+### Signing Commits
+
+`main` requires signed commits, so unsigned commits will block the merge. A `Signed-off-by` trailer does not count: GitHub has to show the green **Verified** badge.
+
+SSH signing is the quickest way to set this up:
+
+```bash
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+The same key must also be registered on your GitHub account as a **Signing key** (Settings → SSH and GPG keys). A key added only for authentication will not verify commits.
+
+To fix commits you already pushed:
+
+```bash
+git commit --amend --no-edit -S && git push --force-with-lease
+```
+
+GPG and S/MIME work too. See [GitHub's commit signing docs](https://docs.github.com/authentication/managing-commit-signature-verification) for those.
 
 ---
 
