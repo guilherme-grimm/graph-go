@@ -374,17 +374,16 @@ Streams real-time updates. Two message types are emitted, both wrapped as `{ "ty
        Close() error
    }
    ```
-3. **Self-register** via `init()` with `adapters.RegisterFactory("name", ...)`
-4. **Add integration tests** (required) — create `{name}_integration_test.go` with:
+3. **Add integration tests** (required) — create `{name}_integration_test.go` with:
    - Build tag `//go:build integration`
    - `TestMain` using testcontainers-go to start a real instance
    - Seed representative data
    - Call `adaptertest.RunContractTests` to validate the interface contract
    - Add adapter-specific tests (filtering, ID format, metadata, etc.)
-5. **Import adapter** in `internal/server/server.go` (blank import for `init()`)
-6. **Add node type** in `internal/graph/nodes/nodes.go`
-7. **Update frontend types** in `webui/src/types/graph.ts`
-8. **Add icon** in `webui/src/components/graph/CustomNode.tsx`
+4. **Add one entry** to `Default()` in `internal/adapters/catalog/catalog.go` — the only place adapters are registered
+5. **Add node type** in `internal/graph/nodes/nodes.go`
+6. **Update frontend types** in `webui/src/types/graph.ts`
+7. **Add icon** in `webui/src/components/graph/CustomNode.tsx`
 
 ## Adding a New Discoverer
 

@@ -15,10 +15,6 @@ import (
 
 var _ adapters.Adapter = (*adapter)(nil)
 
-func init() {
-	adapters.RegisterFactory("http", func(l *zap.SugaredLogger) adapters.Adapter { return New(l) })
-}
-
 type DependsOnEntry struct {
 	Target string `json:"target"`
 	Label  string `json:"label"`

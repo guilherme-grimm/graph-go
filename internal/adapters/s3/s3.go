@@ -18,10 +18,6 @@ import (
 
 var _ adapters.Adapter = (*adapter)(nil)
 
-func init() {
-	adapters.RegisterFactory("s3", func(l *zap.SugaredLogger) adapters.Adapter { return New(l) })
-}
-
 type adapter struct {
 	client *s3.Client
 	logger *zap.SugaredLogger

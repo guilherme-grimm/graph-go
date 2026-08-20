@@ -39,7 +39,9 @@ Use these terms exactly. Don't drift to synonyms.
 
 - **Discoverer** — A backend that produces a `[]ServiceInfo` snapshot of what's running. Implementations: `docker`, `kubernetes`. Contract: `Discover`, `Watch`, `Close`. Lives in `internal/discovery/{name}/`.
 - **Adapter** — A backend that probes a single datastore and returns nodes + edges. Implementations: `postgres`, `mongodb`, `mysql`, `redis`, `elasticsearch`, `s3`, `http`. Contract: `Connect`, `Discover`, `Health`, `Close`. Lives in `internal/adapters/{name}/`.
-- **Registry** — The aggregator. Owns adapters + topology sets, runs `DiscoverAll`, caches the merged graph. `internal/adapters/registry.go`.
+- **Registry** — The aggregator. Owns adapters + topology sets, runs `DiscoverAll`, caches the merged graph. `internal/adapters/registry.go`. Holds live adapter *instances* — distinct from the **Catalog**, which holds the constructors.
+- **Catalog** — The set of adapter constructors the binary knows how to build, keyed by connection type. Immutable, built once at the composition root (`internal/adapters/catalog`). Compile-time only: never a user-facing list of which adapters to enable.
+- **Connection type** — The canonical identifier for a kind of datastore (`postgres`, `redis`, `s3`, …). Produced by Docker classification or the YAML `type:` field, and the key the Catalog is keyed by. `docker.ServiceType` and `nodes.NodeType` are the same identifier in different clothes; unifying them into one Go type is deliberately deferred.
 - **ServiceInfo** — The uniform output of a Discoverer. Two flavors: topology-producing (populates `Nodes`/`Edges` directly, e.g. K8s) and adapter-oriented (populates `Config` for adapter bridging, e.g. Docker).
 - **Node** — A vertex in the graph. Has `Id`, `Type`, `Name`, `Parent`, `Metadata`, `Health`. `internal/graph/nodes/nodes.go`.
 - **Edge** — A relationship between two nodes. `Id`, `Source`, `Target`, `Type`, `Label`. `internal/graph/edges/edges.go`.
@@ -68,7 +70,7 @@ type Adapter interface {
 
 - `ConnectionConfig` and `HealthMetrics` are both `map[string]any`.
 - `Health()` must include a `"status"` key (`healthy`/`degraded`/`unhealthy`); the error return is reserved for "health cannot be determined at all" (e.g. not initialized), not for an unhealthy service.
-- Self-registers: `adapters.RegisterFactory("redis", func(l *zap.SugaredLogger) Adapter { return New(l) })` in `init()`.
+- Listed in the **Catalog**: one entry in `catalog.Default()` maps the connection type to a constructor. No `init()` self-registration. (ADR-0002)
 - The logger argument is always non-nil (falls back to no-op).
 
 ### Discoverer (`internal/discovery/discovery.go`)
@@ -189,7 +191,7 @@ Kubernetes-discovered (topology):
 ## Key decisions
 
 - **ADR-0001** — zap `SugaredLogger` over stdlib `log/slog`. Logger constructed once in `internal/logging`, threaded via constructor, no globals.
-- **Self-registration via `init()`** — adapters call `RegisterFactory` in `init()`; `server.go` lists them as blank imports. Adding an adapter = new package + one blank import + node type + frontend type/icon.
+- **Explicit adapter registration** — no `init()` side effects, no blank imports. `internal/adapters/catalog` names every adapter in one readable list; `cmd/app` builds the Catalog and passes it in. `internal/server` imports only the `Adapter` interface, never a concrete adapter, so any composition root (MCP, flow sampling) can assemble its own set.
 - **Two discoverer flavors** — topology-producing (K8s, emits nodes/edges directly) vs adapter-oriented (Docker, emits `Config` for the adapter bridge). Keeps the `Discoverer` contract uniform while letting each backend contribute at the right level.
 - **Sequential adapter discovery** — `DiscoverAll` probes adapters one at a time. Acceptable at current adapter counts; the latency floor for many remote datastores.
 
@@ -197,5 +199,5 @@ Kubernetes-discovered (topology):
 
 ## Adding to the system
 
-- **New adapter**: `internal/adapters/{name}/` → implement `Adapter` → `init()` self-register → integration test with `adaptertest.RunContractTests` → blank import in `server.go` → node type in `nodes.go` → frontend type + icon.
+- **New adapter**: `internal/adapters/{name}/` → implement `Adapter` → integration test with `adaptertest.RunContractTests` → add one entry to `catalog.Default()` → node type in `nodes.go` → frontend type + icon.
 - **New discoverer**: `internal/discovery/{name}/` → implement `Discoverer` → `build{Name}Discovery()` in `server.go` → integration tests with real infrastructure (no mocks).

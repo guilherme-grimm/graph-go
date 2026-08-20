@@ -17,10 +17,6 @@ import (
 
 var _ adapters.Adapter = (*adapter)(nil)
 
-func init() {
-	adapters.RegisterFactory("redis", func(l *zap.SugaredLogger) adapters.Adapter { return New(l) })
-}
-
 type adapter struct {
 	client *redis.Client
 	addr   string

@@ -186,7 +186,7 @@ func (e *ConnectionEntry) ToConnectionConfig() adapters.ConnectionConfig {
 			cfg["password"] = e.Password
 		}
 	default:
-		// Unknown types fall through; NewAdapter will surface the error at the call site.
+		// Unknown types fall through; the Catalog lookup surfaces the error at the call site.
 	}
 
 	return cfg

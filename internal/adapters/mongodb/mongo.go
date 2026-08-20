@@ -22,10 +22,6 @@ var systemDBs = map[string]bool{
 
 var _ adapters.Adapter = (*adapter)(nil)
 
-func init() {
-	adapters.RegisterFactory("mongodb", func(l *zap.SugaredLogger) adapters.Adapter { return New(l) })
-}
-
 type adapter struct {
 	client *mongo.Client
 	uri    string
