@@ -41,7 +41,8 @@ dependency.
   packages import it, so the list would be an import cycle.)
 - `server.BuildRegistry(cfg, logger, cat)` and `server.NewServer(cfg, logger, cat)`
   take the Catalog as a **required** parameter.
-- `cmd/app` is the only place in the tree that names concrete adapters.
+- `internal/adapters/catalog` is the single list of concrete adapters the binary
+  ships with; `cmd/app` is the only place that *builds* one and passes it in.
 - The seven `func init()` blocks, the seven blank imports, the package-level
   `factories` map, `factoryMu`, `RegisterFactory`, and `NewAdapter` are gone.
 
@@ -61,9 +62,22 @@ block for services discovery cannot reach.
    runs `graph-go serve`, their Postgres container is discovered and classified
    correctly, and then adapter construction fails with
    `unknown adapter type "postgres"`. Zero Config visibly broken, cause invisible.
-   With a required Catalog parameter the same mistake cannot compile. This is the
-   main reason: explicit registration makes the zero-config promise *structurally*
-   safer, it does not weaken it.
+
+   Two separate compile-time checks now stand where that single deletable line
+   used to be, and it is worth being precise about which does what:
+
+   - The **required parameter** means a composition root cannot forget to supply
+     a Catalog at all. It says nothing about the Catalog's contents.
+   - **Orphaned imports** cover the contents. `catalog.go` imports each adapter
+     package solely to name its constructor in the map, so deleting an entry
+     leaves `"…/internal/adapters/postgres" imported and not used` — a build
+     failure, not a runtime surprise.
+
+   Neither check stops someone from deliberately removing an entry *and* its
+   import together, which is as it should be: that is how an adapter gets
+   retired. The property gained is that no single careless deletion can silently
+   ship a binary missing an adapter. Explicit registration makes the zero-config
+   promise *structurally* safer; it does not weaken it.
 3. **`internal/server` stops deciding what a binary supports.** It now imports
    only the `Adapter` interface, never a concrete adapter. That is the seam the
    M1 flow work and the M3 MCP server need — either can compose its own adapter
