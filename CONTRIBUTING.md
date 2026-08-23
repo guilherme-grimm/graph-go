@@ -75,7 +75,7 @@ make lint               # golangci-lint
 
 ### Code Style
 
-**Go:** Follow standard conventions (`gofmt`, `go vet`). Descriptive names, early returns, functions under 50 lines.
+**Go:** Follow standard conventions (`gofmt`, `go vet`). Descriptive names, early returns, functions under 50 lines. Default tests to the external `package_name_test` package so they exercise the exported API. Keep an internal test package only when the test intentionally covers package-private behavior that cannot be expressed through the exported contract.
 
 **TypeScript:** Strict mode, no `any`, functional components with hooks, components under 200 lines.
 
