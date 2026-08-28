@@ -1,4 +1,4 @@
-package adapters
+package adapters_test
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/guilherme-grimm/graph-go/internal/adapters"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
 )
@@ -20,7 +21,7 @@ type stubAdapter struct {
 	discoverErr error
 }
 
-func (s *stubAdapter) Connect(config ConnectionConfig) error {
+func (s *stubAdapter) Connect(config adapters.ConnectionConfig) error {
 	if s.connectErr != nil {
 		return s.connectErr
 	}
@@ -32,17 +33,17 @@ func (s *stubAdapter) Discover() ([]nodes.Node, []edges.Edge, error) {
 	return s.discoverN, s.discoverE, s.discoverErr
 }
 
-func (s *stubAdapter) Health() (HealthMetrics, error) {
-	return HealthMetrics{"status": "healthy"}, nil
+func (s *stubAdapter) Health() (adapters.HealthMetrics, error) {
+	return adapters.HealthMetrics{"status": "healthy"}, nil
 }
 
 func (s *stubAdapter) Close() error { return nil }
 
 func TestRegister_Success(t *testing.T) {
-	reg := NewRegistry(zap.NewNop().Sugar())
+	reg := adapters.NewRegistry(zap.NewNop().Sugar())
 	a := &stubAdapter{}
 
-	err := reg.Register("test-db", "postgres", a, ConnectionConfig{"host": "localhost"})
+	err := reg.Register("test-db", "postgres", a, adapters.ConnectionConfig{"host": "localhost"})
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -66,10 +67,10 @@ func TestRegister_Success(t *testing.T) {
 }
 
 func TestRegister_ConnectFailure(t *testing.T) {
-	reg := NewRegistry(zap.NewNop().Sugar())
+	reg := adapters.NewRegistry(zap.NewNop().Sugar())
 	a := &stubAdapter{connectErr: fmt.Errorf("connection refused")}
 
-	err := reg.Register("bad-db", "postgres", a, ConnectionConfig{})
+	err := reg.Register("bad-db", "postgres", a, adapters.ConnectionConfig{})
 	if err == nil {
 		t.Fatal("expected Register to return error on Connect failure")
 	}
@@ -85,12 +86,12 @@ func TestRegister_ConnectFailure(t *testing.T) {
 }
 
 func TestRegister_InvalidatesCache(t *testing.T) {
-	reg := NewRegistry(zap.NewNop().Sugar())
+	reg := adapters.NewRegistry(zap.NewNop().Sugar())
 	a1 := &stubAdapter{
 		discoverN: []nodes.Node{{Id: "n1", Name: "first", Type: "postgres", Health: "healthy"}},
 	}
 
-	if err := reg.Register("db1", "postgres", a1, ConnectionConfig{}); err != nil {
+	if err := reg.Register("db1", "postgres", a1, adapters.ConnectionConfig{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,7 +106,7 @@ func TestRegister_InvalidatesCache(t *testing.T) {
 	a2 := &stubAdapter{
 		discoverN: []nodes.Node{{Id: "n2", Name: "second", Type: "redis", Health: "healthy"}},
 	}
-	if err := reg.Register("cache1", "redis", a2, ConnectionConfig{}); err != nil {
+	if err := reg.Register("cache1", "redis", a2, adapters.ConnectionConfig{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,13 +122,13 @@ func TestRegister_InvalidatesCache(t *testing.T) {
 }
 
 func TestRegister_ConcurrentWithDiscoverAll(t *testing.T) {
-	reg := NewRegistry(zap.NewNop().Sugar())
+	reg := adapters.NewRegistry(zap.NewNop().Sugar())
 
 	// Pre-register one adapter.
 	a0 := &stubAdapter{
 		discoverN: []nodes.Node{{Id: "n0", Name: "seed", Type: "postgres", Health: "healthy"}},
 	}
-	if err := reg.Register("seed", "postgres", a0, ConnectionConfig{}); err != nil {
+	if err := reg.Register("seed", "postgres", a0, adapters.ConnectionConfig{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -152,7 +153,7 @@ func TestRegister_ConcurrentWithDiscoverAll(t *testing.T) {
 			a := &stubAdapter{
 				discoverN: []nodes.Node{{Id: fmt.Sprintf("n-%d", i), Name: fmt.Sprintf("db-%d", i), Type: "postgres", Health: "healthy"}},
 			}
-			_ = reg.Register(fmt.Sprintf("db-%d", i), "postgres", a, ConnectionConfig{})
+			_ = reg.Register(fmt.Sprintf("db-%d", i), "postgres", a, adapters.ConnectionConfig{})
 		}()
 	}
 
