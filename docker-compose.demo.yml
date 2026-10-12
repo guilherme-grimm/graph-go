@@ -8,6 +8,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./conf/config.docker.yaml:/app/conf/config.yaml:ro
       - backend-data:/app/data
+    # The image runs as a non-root user; grant it the Docker socket's group.
+    # `graph-go demo` sets DOCKER_GID for you. With plain compose on Linux:
+    #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f docker-compose.demo.yml up
+    group_add:
+      - "${DOCKER_GID:-0}"
     labels:
       graphgo.ignore: "true"
     depends_on:
@@ -166,6 +171,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - backend-data:/app/data
+    # The image runs as a non-root user; grant it the Docker socket's group.
+    # `graph-go demo` sets DOCKER_GID for you. With plain compose on Linux:
+    #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f docker-compose.demo.yml up
+    group_add:
+      - "${DOCKER_GID:-0}"
     labels:
       graphgo.ignore: "true"
     depends_on:

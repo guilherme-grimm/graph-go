@@ -77,10 +77,13 @@ One container, one port. Mount the Docker socket read-only and graph-go auto-dis
 ```bash
 docker run -d -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  --group-add "$(stat -c %g /var/run/docker.sock)" \
   ghcr.io/guilherme-grimm/graph-go:latest
 ```
 
-> graph-go only reads from the Docker socket. The `:ro` flag enforces this — keep it.
+> The image runs as a non-root user, so `--group-add` grants it the socket's group (`stat -c` is Linux; on macOS start with `--group-add 0`). If Docker discovery still falls back to YAML-only, the startup log prints the exact `--group-add` value to use.
+>
+> graph-go only reads from the Docker API (list, inspect, events). `:ro` does not restrict API calls, though: anything that can reach the socket can control the daemon, so only run graph-go where you would grant it that access.
 
 Open **http://localhost:8080**. Auto-discovery handles Docker containers and (when a kubeconfig or in-cluster service account is present) Kubernetes resources without any config file.
 
@@ -144,6 +147,7 @@ To use a config file with the Docker run above:
 ```bash
 docker run -d -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  --group-add "$(stat -c %g /var/run/docker.sock)" \
   -v $(pwd)/conf/config.yaml:/app/conf/config.yaml:ro \
   ghcr.io/guilherme-grimm/graph-go:latest
 ```
