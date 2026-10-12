@@ -12,12 +12,12 @@ connections:
     type: mongodb
     uri: "mongodb://graphgo:graphgo@mongo:27017"
 
-  - name: minio
+  - name: rustfs
     type: s3
     region: us-east-1
-    endpoint: "http://minio:9000"
-    access_key_id: minioadmin
-    secret_access_key: minioadmin
+    endpoint: "http://rustfs:9000"
+    access_key_id: graphgo
+    secret_access_key: graphgo-secret
 
   # ── Application Services ───────────────────────────────────────────────
 

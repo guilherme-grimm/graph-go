@@ -35,6 +35,8 @@ func TestClassifyImage(t *testing.T) {
 
 		// MinIO excludes
 		{"minio/mc:latest", TypeHTTP},
+		{"rustfs/rustfs:1.0.0", TypeS3},
+		{"rustfs/rustfs:latest-glibc", TypeS3},
 
 		// Redis
 		{"redis:7-alpine", TypeRedis},

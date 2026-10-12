@@ -132,7 +132,7 @@ Typical flow:
 |---|---|
 | `8080` | graph-go (UI + API + WebSocket — production) |
 | `5173` | Vite dev server (development only — see [CONTRIBUTING.md](CONTRIBUTING.md)) |
-| `9001` | MinIO console (demo stack only) |
+| `9001` | RustFS console at `/rustfs/console/` (demo stack only) |
 
 ---
 
@@ -262,7 +262,7 @@ Edges represent relationships (`contains`, `foreign_key`, `routes_to`, etc.).
 - MySQL 8
 - Redis 7
 - Elasticsearch 8
-- MinIO (S3-compatible)
+- RustFS (S3-compatible)
 
 ---
 
@@ -282,7 +282,7 @@ Runs without Docker. Includes pure function tests and HTTP handler tests.
 go test -tags=integration -v -timeout=5m ./internal/adapters/...
 ```
 
-Requires Docker. Uses [testcontainers-go](https://golang.testcontainers.org/) to spin up real database instances (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, MinIO) — no mocks.
+Requires Docker. Uses [testcontainers-go](https://golang.testcontainers.org/) to spin up real database instances (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, RustFS for S3) — no mocks.
 
 Every adapter runs through the **contract test suite** (`adaptertest.RunContractTests`) which validates:
 - Connect/disconnect lifecycle

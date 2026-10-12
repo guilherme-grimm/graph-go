@@ -81,6 +81,36 @@ func TestExtractCredentials_S3(t *testing.T) {
 	}
 }
 
+func TestExtractCredentials_S3RustFS(t *testing.T) {
+	// RUSTFS_VOLUMES and friends come from the official image's own ENV.
+	image := []string{"RUSTFS_VOLUMES=/data", "RUSTFS_OBS_LOGGER_LEVEL=warn"}
+
+	tests := []struct {
+		name       string
+		env        []string
+		wantAccess string
+		wantSecret string
+	}{
+		{name: "rustfs keys", env: append([]string{"RUSTFS_ACCESS_KEY=ak", "RUSTFS_SECRET_KEY=sk"}, image...), wantAccess: "ak", wantSecret: "sk"},
+		{name: "minio compat keys", env: append([]string{"MINIO_ROOT_USER=mu", "MINIO_ROOT_PASSWORD=mp"}, image...), wantAccess: "mu", wantSecret: "mp"},
+		{name: "rustfs keys win over compat", env: append([]string{"RUSTFS_ACCESS_KEY=ak", "MINIO_ROOT_USER=mu", "RUSTFS_SECRET_KEY=sk", "MINIO_ROOT_PASSWORD=mp"}, image...), wantAccess: "ak", wantSecret: "sk"},
+		{name: "rustfs defaults", env: image, wantAccess: "rustfsadmin", wantSecret: "rustfsadmin"},
+		{name: "plain minio defaults unchanged", env: nil, wantAccess: "minioadmin", wantSecret: "minioadmin"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ExtractCredentials(TypeS3, tt.env, "s3-host", "s3")
+			if cfg["access_key_id"] != tt.wantAccess {
+				t.Errorf("access_key_id = %v, want %s", cfg["access_key_id"], tt.wantAccess)
+			}
+			if cfg["secret_access_key"] != tt.wantSecret {
+				t.Errorf("secret_access_key = %v, want %s", cfg["secret_access_key"], tt.wantSecret)
+			}
+		})
+	}
+}
+
 func TestExtractCredentials_Redis(t *testing.T) {
 	env := []string{"REDIS_PASSWORD=redispass"}
 	cfg := ExtractCredentials(TypeRedis, env, "redis-host", "redis")

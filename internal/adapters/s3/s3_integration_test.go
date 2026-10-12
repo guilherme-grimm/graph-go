@@ -15,12 +15,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/testcontainers/testcontainers-go/modules/minio"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
 	"github.com/guilherme-grimm/graph-go/internal/adapters/adaptertest"
 	s3adapter "github.com/guilherme-grimm/graph-go/internal/adapters/s3"
+)
+
+// rustfsImage is the S3-compatible server the adapter is tested against.
+// MinIO no longer publishes pullable images, so any S3 API implementation
+// works here: the adapter only speaks the S3 protocol through the AWS SDK.
+const (
+	rustfsImage  = "rustfs/rustfs:1.0.0"
+	rustfsAccess = "graphgo"
+	rustfsSecret = "graphgo-secret"
 )
 
 var (
@@ -32,19 +42,25 @@ func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	container, err := minio.Run(ctx, "minio/minio:latest",
-		minio.WithUsername("minioadmin"),
-		minio.WithPassword("minioadmin"),
+	container, err := testcontainers.Run(ctx, rustfsImage,
+		testcontainers.WithExposedPorts("9000/tcp"),
+		testcontainers.WithEnv(map[string]string{
+			"RUSTFS_ACCESS_KEY": rustfsAccess,
+			"RUSTFS_SECRET_KEY": rustfsSecret,
+		}),
+		testcontainers.WithWaitStrategy(
+			wait.ForHTTP("/health").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
+		),
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start minio container: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to start rustfs container: %v\n", err)
 		os.Exit(1)
 	}
 	defer container.Terminate(ctx)
 
-	endpoint, err := container.ConnectionString(ctx)
+	endpoint, err := container.PortEndpoint(ctx, "9000/tcp", "")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get minio endpoint: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to get rustfs endpoint: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -52,7 +68,7 @@ func TestMain(m *testing.M) {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion("us-east-1"),
 		awsconfig.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider("minioadmin", "minioadmin", ""),
+			credentials.NewStaticCredentialsProvider(rustfsAccess, rustfsSecret, ""),
 		),
 	)
 	if err != nil {
@@ -89,8 +105,8 @@ func TestMain(m *testing.M) {
 	// Connect the adapter under test
 	testConfig = adapters.ConnectionConfig{
 		"region":            "us-east-1",
-		"access_key_id":     "minioadmin",
-		"secret_access_key": "minioadmin",
+		"access_key_id":     rustfsAccess,
+		"secret_access_key": rustfsSecret,
 		"endpoint":          "http://" + endpoint,
 	}
 	testAdapter = s3adapter.New(zap.NewNop().Sugar())

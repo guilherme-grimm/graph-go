@@ -20,7 +20,7 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
       api-gateway:
         condition: service_healthy
@@ -141,19 +141,18 @@ services:
     networks:
       - graph-go
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  rustfs:
+    image: rustfs/rustfs:1.0.0
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: graphgo
+      RUSTFS_SECRET_KEY: graphgo-secret
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -183,7 +182,7 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
       api-gateway:
         condition: service_healthy
@@ -198,17 +197,20 @@ services:
     networks:
       - graph-go
 
-  minio-init:
-    image: minio/mc:latest
+  rustfs-init:
+    image: rustfs/rustfs:1.0.0
     labels:
       graphgo.ignore: "true"
+    environment:
+      RUSTFS_ACCESS_KEY: graphgo
+      RUSTFS_SECRET_KEY: graphgo-secret
     depends_on:
-      minio:
+      rustfs:
         condition: service_healthy
     volumes:
-      - ./docker/init-minio.sh:/init-minio.sh:ro
+      - ./docker/init-rustfs.sh:/init-rustfs.sh:ro
     entrypoint: /bin/sh
-    command: /init-minio.sh
+    command: /init-rustfs.sh
     networks:
       - graph-go
 
@@ -216,7 +218,7 @@ volumes:
   backend-data:
   postgres-data:
   mongo-data:
-  minio-data:
+  rustfs-data:
 
 networks:
   graph-go:
