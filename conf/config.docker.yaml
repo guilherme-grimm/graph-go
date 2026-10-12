@@ -8,7 +8,7 @@ connections:
     type: postgres
     dsn: "postgres://graphgo:graphgo@postgres:5432/mydb?sslmode=disable"
 
-  - name: mongodb
+  - name: mongo   # matches the Compose service so Docker discovery dedupes it
     type: mongodb
     uri: "mongodb://graphgo:graphgo@mongo:27017"
 
