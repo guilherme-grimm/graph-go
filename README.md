@@ -7,7 +7,9 @@
 Point graph-go at your stack and get a live, interactive map of every database, table, service, and storage bucket — with real-time health monitoring.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-![graph-go demo](./docs/GraphGo.png)
+[![graph-go showcase: Docker auto-discovery, a container appearing live, and Kubernetes swimlanes](./docs/graph-go-showcase.gif)](./docs/graph-go-showcase.mp4)
+
+<sub>▶ [Watch in full quality (MP4)](./docs/graph-go-showcase.mp4)</sub>
 
 </div>
 
