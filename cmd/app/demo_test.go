@@ -197,6 +197,45 @@ func TestDemoHelpers(t *testing.T) {
 	}
 }
 
+func TestDemoEnv(t *testing.T) {
+	gid := func(g int, ok bool) func(string) (int, bool) {
+		return func(path string) (int, bool) {
+			if path != demoDockerSocket {
+				t.Errorf("stat %q, want %q", path, demoDockerSocket)
+			}
+			return g, ok
+		}
+	}
+
+	tests := []struct {
+		name      string
+		environ   []string
+		goos      string
+		socketGID func(string) (int, bool)
+		want      string
+	}{
+		{name: "linux uses host socket gid", environ: []string{"HOME=/h"}, goos: "linux", socketGID: gid(958, true), want: "DOCKER_GID=958"},
+		{name: "linux without socket falls back to 0", environ: nil, goos: "linux", socketGID: gid(0, false), want: "DOCKER_GID=0"},
+		{name: "darwin ignores host gid", environ: nil, goos: "darwin", socketGID: gid(20, true), want: "DOCKER_GID=0"},
+		{name: "explicit DOCKER_GID wins", environ: []string{"DOCKER_GID=123"}, goos: "linux", socketGID: gid(958, true), want: "DOCKER_GID=123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := demoEnv(tt.environ, tt.goos, tt.socketGID)
+			var found []string
+			for _, kv := range got {
+				if strings.HasPrefix(kv, "DOCKER_GID=") {
+					found = append(found, kv)
+				}
+			}
+			if len(found) != 1 || found[0] != tt.want {
+				t.Errorf("DOCKER_GID entries = %v, want [%s]", found, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseBusyDemoPorts(t *testing.T) {
 	tests := []struct {
 		name  string

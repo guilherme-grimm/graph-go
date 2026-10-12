@@ -74,6 +74,12 @@ func extractMongoCredentials(env map[string]string, host string) adapters.Connec
 func extractS3Credentials(env map[string]string, host string) adapters.ConnectionConfig {
 	accessKey := envOrDefault(env, "MINIO_ROOT_USER", "minioadmin")
 	secretKey := envOrDefault(env, "MINIO_ROOT_PASSWORD", "minioadmin")
+	if isRustFS(env) {
+		// RustFS also honors MINIO_ROOT_*, but its own keys win and its
+		// built-in default differs.
+		accessKey = envOrDefault(env, "RUSTFS_ACCESS_KEY", envOrDefault(env, "MINIO_ROOT_USER", "rustfsadmin"))
+		secretKey = envOrDefault(env, "RUSTFS_SECRET_KEY", envOrDefault(env, "MINIO_ROOT_PASSWORD", "rustfsadmin"))
+	}
 	endpoint := fmt.Sprintf("http://%s:%d", host, DefaultPortForType(TypeS3))
 
 	return adapters.ConnectionConfig{
@@ -138,6 +144,18 @@ func extractElasticsearchCredentials(env map[string]string, host string) adapter
 	}
 
 	return cfg
+}
+
+// isRustFS reports whether a container is RustFS. The official image sets
+// RUSTFS_* variables in its own ENV, so they show up even when the user
+// configures nothing.
+func isRustFS(env map[string]string) bool {
+	for k := range env {
+		if strings.HasPrefix(k, "RUSTFS_") {
+			return true
+		}
+	}
+	return false
 }
 
 func envOrDefault(env map[string]string, key, fallback string) string {

@@ -135,7 +135,7 @@ docker-up:
 	@echo ""
 	@echo "Demo stack started:"
 	@echo "  graph-go:      http://localhost:8080"
-	@echo "  MinIO Console: http://localhost:9001"
+	@echo "  RustFS Console: http://localhost:9001/rustfs/console/"
 
 ## docker-down: Stop the demo stack
 docker-down:

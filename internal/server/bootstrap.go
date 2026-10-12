@@ -169,6 +169,10 @@ func buildDockerDiscovery(cfg *config.Config, logger *zap.SugaredLogger) *docker
 		IgnoreImages: ignoreImages,
 	}, logger)
 	if err != nil {
+		if hint := docker.SocketAccessHint(socket, err); hint != "" {
+			logger.Warnw("docker discovery unavailable: permission denied on Docker socket, falling back to YAML-only", "socket", socket, "fix", hint)
+			return nil
+		}
 		logger.Warnw("docker discovery unavailable, falling back to YAML-only", "err", err)
 		return nil
 	}
