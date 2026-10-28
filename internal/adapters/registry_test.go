@@ -19,6 +19,7 @@ type stubAdapter struct {
 	discoverN   []nodes.Node
 	discoverE   []edges.Edge
 	discoverErr error
+	closed      bool
 }
 
 func (s *stubAdapter) Connect(config adapters.ConnectionConfig) error {
@@ -37,7 +38,10 @@ func (s *stubAdapter) Health() (adapters.HealthMetrics, error) {
 	return adapters.HealthMetrics{"status": "healthy"}, nil
 }
 
-func (s *stubAdapter) Close() error { return nil }
+func (s *stubAdapter) Close() error {
+	s.closed = true
+	return nil
+}
 
 func TestRegister_Success(t *testing.T) {
 	reg := adapters.NewRegistry(zap.NewNop().Sugar())
@@ -160,4 +164,48 @@ func TestRegister_ConcurrentWithDiscoverAll(t *testing.T) {
 	wg.Wait()
 	// If we get here without deadlock or panic, the test passes.
 	// The race detector (go test -race) verifies no data races.
+}
+
+func TestUnregister_RemovesAdapterAndNodes(t *testing.T) {
+	reg := adapters.NewRegistry(zap.NewNop().Sugar())
+	a := &stubAdapter{discoverN: []nodes.Node{{Id: "t1", Type: "table", Name: "t1"}}}
+	if err := reg.Register("gone", "postgres", a, nil); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if g, _ := reg.DiscoverAll(); len(g.Nodes) == 0 {
+		t.Fatal("expected nodes before Unregister")
+	}
+
+	if err := reg.Unregister("gone"); err != nil {
+		t.Fatalf("Unregister failed: %v", err)
+	}
+	if !a.closed {
+		t.Error("expected Unregister to close the adapter")
+	}
+	if _, ok := reg.Get("gone"); ok {
+		t.Error("adapter still retrievable after Unregister")
+	}
+	if g, _ := reg.DiscoverAll(); len(g.Nodes) != 0 {
+		t.Errorf("expected stale nodes pruned, got %d", len(g.Nodes))
+	}
+	if err := reg.Unregister("gone"); err != nil {
+		t.Errorf("Unregister of unknown name should be a no-op, got %v", err)
+	}
+}
+
+func TestRegister_ClosesReplacedAdapter(t *testing.T) {
+	reg := adapters.NewRegistry(zap.NewNop().Sugar())
+	old, replacement := &stubAdapter{}, &stubAdapter{}
+	if err := reg.Register("db", "postgres", old, nil); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if err := reg.Register("db", "postgres", replacement, nil); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if !old.closed {
+		t.Error("expected replaced adapter to be closed")
+	}
+	if replacement.closed {
+		t.Error("replacement adapter should stay open")
+	}
 }

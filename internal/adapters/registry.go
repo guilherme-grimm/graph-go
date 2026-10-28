@@ -17,7 +17,12 @@ import (
 const defaultCacheTTL = 30 * time.Second
 
 type Registry interface {
+	// Register connects adapter and stores it under name. Re-registering a
+	// name closes the adapter it replaces.
 	Register(name string, connType string, adapter Adapter, config ConnectionConfig) error
+	// Unregister closes and removes the named adapter, dropping its nodes from
+	// the next DiscoverAll. Unknown names are a no-op.
+	Unregister(name string) error
 	Get(name string) (Adapter, bool)
 	Names() []string
 	DiscoverAll() (*graph.Graph, error)
@@ -116,12 +121,36 @@ func (r *registry) Register(name string, connType string, adapter Adapter, confi
 	}
 
 	r.mu.Lock()
+	prev := r.adapters[name]
 	r.adapters[name] = adapter
 	r.config[name] = config
 	r.types[name] = connType
 	r.mu.Unlock()
 
 	r.InvalidateCache()
+	if prev != nil && prev != adapter {
+		if err := prev.Close(); err != nil {
+			r.logger.Warnw("closing replaced adapter failed", "adapter", name, "err", err)
+		}
+	}
+	return nil
+}
+
+func (r *registry) Unregister(name string) error {
+	r.mu.Lock()
+	a, ok := r.adapters[name]
+	delete(r.adapters, name)
+	delete(r.config, name)
+	delete(r.types, name)
+	r.mu.Unlock()
+	if !ok {
+		return nil
+	}
+
+	r.InvalidateCache()
+	if err := a.Close(); err != nil {
+		return fmt.Errorf("registry: close adapter %q: %w", name, err)
+	}
 	return nil
 }
 

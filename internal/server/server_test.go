@@ -19,10 +19,11 @@ import (
 var testLogger = zap.NewNop().Sugar()
 
 // trackingRegistry extends mockRegistry with call tracking for testing
-// applyServices and buildOnChange.
+// serviceSync and buildOnChange.
 type trackingRegistry struct {
 	mu               sync.Mutex
 	registered       []string
+	unregistered     []string
 	registerErr      error
 	topologyBySource map[string]int
 	cacheInvalidated int
@@ -44,6 +45,13 @@ func (r *trackingRegistry) Register(name, connType string, adapter adapters.Adap
 		return r.registerErr
 	}
 	r.registered = append(r.registered, name)
+	return nil
+}
+
+func (r *trackingRegistry) Unregister(name string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.unregistered = append(r.unregistered, name)
 	return nil
 }
 
@@ -81,7 +89,7 @@ func testCatalog() adapters.Catalog {
 	})
 }
 
-// ── applyServices tests ──────────────────────────────────────────────
+// ── serviceSync tests ──────────────────────────────────────────────
 
 func TestApplyServices_AdapterOnly(t *testing.T) {
 	reg := newTrackingRegistry()
@@ -91,7 +99,7 @@ func TestApplyServices_AdapterOnly(t *testing.T) {
 		{Name: "db2", Type: "test-type", Source: "docker", Config: adapters.ConnectionConfig{}},
 	}
 
-	applyServices(reg, testCatalog(), services, testLogger)
+	newServiceSync(reg, testCatalog(), nil, testLogger).apply(services, "")
 
 	if len(reg.registered) != 2 {
 		t.Errorf("expected 2 registrations, got %d", len(reg.registered))
@@ -114,7 +122,7 @@ func TestApplyServices_TopologyOnly(t *testing.T) {
 		},
 	}
 
-	applyServices(reg, testCatalog(), services, testLogger)
+	newServiceSync(reg, testCatalog(), nil, testLogger).apply(services, "")
 
 	if len(reg.registered) != 0 {
 		t.Errorf("expected no registrations, got %d", len(reg.registered))
@@ -132,7 +140,7 @@ func TestApplyServices_Mixed(t *testing.T) {
 		{Name: "ns", Type: "namespace", Source: "kubernetes", Nodes: []nodes.Node{{Id: "n1"}}},
 	}
 
-	applyServices(reg, testCatalog(), services, testLogger)
+	newServiceSync(reg, testCatalog(), nil, testLogger).apply(services, "")
 
 	if len(reg.registered) != 1 {
 		t.Errorf("expected 1 registration, got %d", len(reg.registered))
@@ -151,7 +159,7 @@ func TestApplyServices_UnknownAdapterType(t *testing.T) {
 	}
 
 	// Should not panic; unknown type is logged and skipped.
-	applyServices(reg, testCatalog(), services, testLogger)
+	newServiceSync(reg, testCatalog(), nil, testLogger).apply(services, "")
 
 	if len(reg.registered) != 1 {
 		t.Errorf("expected 1 registration (unknown type skipped), got %d", len(reg.registered))
@@ -183,7 +191,7 @@ func TestBuildOnChange_TopologyDiscoverer(t *testing.T) {
 		},
 	}
 
-	onChange := buildOnChange(context.Background(), d, reg, testCatalog(), testLogger)
+	onChange := buildOnChange(context.Background(), d, newServiceSync(reg, testCatalog(), nil, testLogger), testLogger)
 	onChange()
 
 	if reg.topologyBySource["kubernetes"] != 2 {
@@ -200,12 +208,12 @@ func TestBuildOnChange_AdapterDiscoverer(t *testing.T) {
 		},
 	}
 
-	onChange := buildOnChange(context.Background(), d, reg, testCatalog(), testLogger)
+	onChange := buildOnChange(context.Background(), d, newServiceSync(reg, testCatalog(), nil, testLogger), testLogger)
 	onChange()
 
-	// MF-1 fix: buildOnChange should call applyServices for adapter discoverers.
+	// MF-1 fix: buildOnChange should sync services for adapter discoverers.
 	if len(reg.registered) != 1 {
-		t.Errorf("expected applyServices to register 1 adapter, got %d", len(reg.registered))
+		t.Errorf("expected sync to register 1 adapter, got %d", len(reg.registered))
 	}
 }
 
@@ -216,10 +224,67 @@ func TestBuildOnChange_DiscoverError(t *testing.T) {
 		err:  fmt.Errorf("daemon not running"),
 	}
 
-	onChange := buildOnChange(context.Background(), d, reg, testCatalog(), testLogger)
+	onChange := buildOnChange(context.Background(), d, newServiceSync(reg, testCatalog(), nil, testLogger), testLogger)
 	onChange()
 
 	if reg.cacheInvalidated != 1 {
 		t.Errorf("expected cache invalidated on error, got %d", reg.cacheInvalidated)
+	}
+}
+
+func TestServiceSync_SkipsUnchangedServices(t *testing.T) {
+	reg := newTrackingRegistry()
+	ss := newServiceSync(reg, testCatalog(), nil, testLogger)
+	services := []discovery.ServiceInfo{
+		{Name: "db1", Type: "test-type", Source: "docker", Config: adapters.ConnectionConfig{"host": "a"}},
+	}
+
+	ss.apply(services, "docker")
+	ss.apply(services, "docker")
+	if len(reg.registered) != 1 {
+		t.Fatalf("unchanged service should not reconnect, got %d registrations", len(reg.registered))
+	}
+
+	services[0].Config = adapters.ConnectionConfig{"host": "b"}
+	ss.apply(services, "docker")
+	if len(reg.registered) != 2 {
+		t.Errorf("changed config should re-register, got %d registrations", len(reg.registered))
+	}
+}
+
+func TestServiceSync_PrunesRemovedServices(t *testing.T) {
+	reg := newTrackingRegistry()
+	ss := newServiceSync(reg, testCatalog(), []discovery.YAMLEntry{
+		{Name: "from-yaml", Type: "test-type"},
+	}, testLogger)
+
+	ss.apply([]discovery.ServiceInfo{
+		{Name: "stays", Type: "test-type", Source: "docker"},
+		{Name: "goes", Type: "test-type", Source: "docker"},
+	}, "")
+	ss.apply([]discovery.ServiceInfo{
+		{Name: "stays", Type: "test-type", Source: "docker"},
+	}, "docker")
+
+	if len(reg.unregistered) != 1 || reg.unregistered[0] != "goes" {
+		t.Errorf("expected only %q pruned, got %v", "goes", reg.unregistered)
+	}
+}
+
+func TestServiceSync_KeepsYAMLOverrideOnRefresh(t *testing.T) {
+	reg := newTrackingRegistry()
+	yaml := []discovery.YAMLEntry{
+		{Name: "db1", Type: "test-type", Config: adapters.ConnectionConfig{"dsn": "from-yaml"}},
+	}
+	ss := newServiceSync(reg, testCatalog(), yaml, testLogger)
+	discovered := []discovery.ServiceInfo{
+		{Name: "db1", Type: "test-type", Source: "docker", Config: adapters.ConnectionConfig{"dsn": "from-docker"}},
+	}
+
+	ss.apply(discovered, "")
+	ss.apply(discovered, "docker")
+
+	if len(reg.registered) != 1 {
+		t.Errorf("refresh should keep the YAML config and not re-register, got %d registrations", len(reg.registered))
 	}
 }

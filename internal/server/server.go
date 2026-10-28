@@ -44,7 +44,7 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 		allowedOrigins = []string{"http://localhost:3000", "http://localhost:5173"}
 	}
 
-	reg, discoverers, regCleanup := BuildRegistry(cfg, logger, cat)
+	reg, discoverers, svcSync, regCleanup := buildRegistry(cfg, logger, cat)
 
 	// Start a Watch() goroutine for each discoverer. Topology-oriented
 	// discoverers refresh their topology on each callback; adapter-oriented
@@ -52,7 +52,7 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 	watchCtx, watchCancel := context.WithCancel(context.Background())
 	for _, d := range discoverers {
 		d := d
-		onChange := buildOnChange(watchCtx, d, reg, cat, logger)
+		onChange := buildOnChange(watchCtx, d, svcSync, logger)
 		go func() {
 			if err := d.Watch(watchCtx, onChange); err != nil {
 				logger.Warnw("discoverer watch stopped", "discoverer", d.Name(), "err", err)
@@ -86,14 +86,15 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 
 // buildOnChange returns the callback invoked on discoverer events. For
 // discoverers that produce topology ServiceInfo, it re-reads their snapshot
-// and replaces the registry topology before invalidating caches. For pure
-// adapter discoverers, it just invalidates the cache.
-func buildOnChange(ctx context.Context, d discovery.Discoverer, reg adapters.Registry, cat adapters.Catalog, logger *zap.SugaredLogger) func() {
+// and replaces the registry topology before invalidating caches. For adapter
+// discoverers, it syncs the fresh service list: new or changed services are
+// (re)registered and ones that disappeared are pruned.
+func buildOnChange(ctx context.Context, d discovery.Discoverer, svcSync *serviceSync, logger *zap.SugaredLogger) func() {
 	return func() {
 		fresh, err := d.Discover(ctx)
 		if err != nil {
 			logger.Warnw("discoverer refresh failed", "discoverer", d.Name(), "err", err)
-			reg.InvalidateCache()
+			svcSync.reg.InvalidateCache()
 			return
 		}
 		var hasTopology bool
@@ -107,9 +108,9 @@ func buildOnChange(ctx context.Context, d discovery.Discoverer, reg adapters.Reg
 			}
 		}
 		if hasTopology {
-			reg.SetTopology(d.Name(), topoNodes, topoEdges)
+			svcSync.reg.SetTopology(d.Name(), topoNodes, topoEdges)
 			return
 		}
-		applyServices(reg, cat, fresh, logger)
+		svcSync.apply(fresh, d.Name())
 	}
 }
