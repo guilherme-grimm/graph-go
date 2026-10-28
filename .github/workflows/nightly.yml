@@ -1,0 +1,92 @@
+name: Nightly
+
+# Rolling prerelease for testing unreleased work: binaries on the `nightly`
+# GitHub release and a ghcr.io/<repo>:nightly image. Runs nightly from main,
+# on pushes to release/** branches, or on demand for any branch.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  push:
+    branches: ["release/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  binaries:
+    name: Build & Publish Nightly Binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: webui
+        run: npm ci
+
+      - name: Build embedded frontend bundle
+        run: make build-frontend
+
+      - name: Build snapshot binaries
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --snapshot --clean
+
+      - name: Replace the nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly \
+            --target "$GITHUB_SHA" \
+            --prerelease --latest=false \
+            --title "Nightly (${GITHUB_REF_NAME} @ ${GITHUB_SHA::7})" \
+            --notes "Untested build of \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA}, published $(date -u +%Y-%m-%dT%H:%MZ). Not for production. Docker: \`ghcr.io/${{ github.repository }}:nightly\`." \
+            dist/*.tar.gz dist/*.zip dist/checksums.txt
+
+  docker:
+    name: Build & Push Nightly Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute build date
+        id: build_date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VERSION=nightly-${{ github.sha }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build_date.outputs.value }}
+          tags: ghcr.io/${{ github.repository }}:nightly
