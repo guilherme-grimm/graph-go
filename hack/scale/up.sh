@@ -27,6 +27,9 @@ export KUBECONFIG="$DIR/.kubeconfig"
 
 if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
   kind create cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" --wait 120s
+elif [[ ! -f $KUBECONFIG ]]; then
+  # Reusing a cluster whose kubeconfig was deleted: write it again.
+  kind export kubeconfig --name "$CLUSTER" --kubeconfig "$KUBECONFIG"
 fi
 
 if ! kubectl get deploy -n kube-system kwok-controller >/dev/null 2>&1; then
@@ -113,6 +116,10 @@ for _ in $(seq 1 120); do
   (( total >= want )) && break
   sleep 5
 done
+if (( total < want )); then
+  echo "Timed out with $total/$want pods; not measuring against a partial cluster." >&2
+  exit 1
+fi
 
 echo "Cluster $CLUSTER ready: $NAMESPACES ns x $DEPLOYS deploys x $REPLICAS replicas (~$want pods)."
 echo "Run: graph-go serve -c $DIR/scale.yaml"

@@ -8,6 +8,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
   ReactFlowProvider,
   type Node,
   type Edge,
@@ -135,6 +136,9 @@ function edgeCounts(edges: GraphEdge[]) {
   return { degree, routesTo };
 }
 
+// Id prefix of the merged service->workload edges swimlane draws.
+const SWIM_EDGE_PREFIX = 'swim:';
+
 const SWIM_WORKLOAD_TYPES = new Set(['deployment', 'statefulset', 'daemonset']);
 
 // Swimlane already encodes containment spatially (lane = namespace, row =
@@ -158,7 +162,7 @@ function simplifySwimlaneEdges(edges: GraphEdge[], nodeById: Map<string, Graph['
       out.push(e);
       continue;
     }
-    const id = `swim:${e.source}->${owner}`;
+    const id = `${SWIM_EDGE_PREFIX}${e.source}->${owner}`;
     if (seen.has(id)) continue;
     seen.add(id);
     out.push({ id, source: e.source, target: owner, type: 'routes_to' });
@@ -474,6 +478,7 @@ function GraphCanvasInner({
   fitKey,
 }: GraphCanvasProps) {
   const { setViewport } = useReactFlow();
+  const store = useStoreApi();
   const hasFitRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const { savedPositions, savePosition, clearLayout } = useLayoutPersistence(graph, layoutMode);
@@ -481,6 +486,8 @@ function GraphCanvasInner({
   const [justSavedNodeId, setJustSavedNodeId] = useState<string | null>(null);
   const prevLayoutModeRef = useRef(layoutMode);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const graphIsEmpty = graph?.nodes?.length === 0;
 
   // Dynamic viewport via ResizeObserver
   const [viewportSize, setViewportSize] = useState({ width: 1200, height: 800 });
@@ -498,7 +505,9 @@ function GraphCanvasInner({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // The canvas div only exists once loading/error/empty states are gone,
+    // so re-run when those change or the observer never attaches.
+  }, [isLoading, error, graphIsEmpty]);
 
   // Memo 1: Expensive layout computation — NOT dependent on selectedNodeId
   const { layoutNodes, layoutEdges, detailEdges } = useMemo(() => {
@@ -514,9 +523,13 @@ function GraphCanvasInner({
   }, [layoutNodes, viewportSize]);
   const fitView = useCallback((opts: { duration?: number } = {}) => {
     const { layoutNodes: ln, viewportSize: vs } = fitInputRef.current;
-    const vp = viewportForLayout(ln, vs);
+    // Prefer React Flow's own measured size: the ResizeObserver isn't attached
+    // when the canvas first mounts behind the loading state, so viewportSize
+    // can still be its 1200x800 fallback here.
+    const { width, height } = store.getState();
+    const vp = viewportForLayout(ln, width > 0 && height > 0 ? { width, height } : vs);
     if (vp) setViewport(vp, { duration: opts.duration });
-  }, [setViewport]);
+  }, [setViewport, store]);
 
   // Layout transition animation — subscribe to layoutMode changes via effect
   useEffect(() => {
@@ -590,11 +603,19 @@ function GraphCanvasInner({
 
   const handleEdgeClick = useCallback(
     (_event: React.MouseEvent, edge: Edge) => {
+      // A simplified swimlane edge stands for several real edges, so there is
+      // no single edge to inspect. Select its source service instead: that
+      // reveals the real edges on the canvas and lists them in the inspector,
+      // and the node id round-trips through the URL like any selection.
+      if (edge.id.startsWith(SWIM_EDGE_PREFIX)) {
+        onNodeSelect(edge.source);
+        return;
+      }
       if (!onEdgeClick || !graph) return;
       const graphEdge = graph.edges.find(e => e.id === edge.id);
       if (graphEdge) onEdgeClick(graphEdge);
     },
-    [onEdgeClick, graph]
+    [onEdgeClick, onNodeSelect, graph]
   );
 
   const handlePaneClick = useCallback(() => {
