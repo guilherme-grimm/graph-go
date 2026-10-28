@@ -21,7 +21,7 @@ import CustomEdge, { type CustomEdgeData } from './CustomEdge';
 import { EdgeMarkerDefs } from './EdgeMarkerDefs';
 import { EmptyState } from '../ui';
 import type { Graph, GraphEdge } from '../../types';
-import { calculatePriority, countConnections, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, debounce } from '../../utils';
+import { calculatePriority, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, debounce, worstHealth, type NamespaceSummary } from '../../utils';
 import { useLayoutPersistence } from '../../hooks';
 import type { LayoutMode } from '../HeaderBar';
 import styles from './GraphCanvas.module.css';
@@ -44,7 +44,53 @@ interface GraphCanvasProps {
   isLoading?: boolean;
   error?: Error | null;
   onRetry?: () => void;
+  // Per-namespace summaries from collapseNamespaces; drive lane stats and the
+  // collapsed rendering.
+  namespaces?: Map<string, NamespaceSummary>;
+  onToggleCollapse?: (namespaceName: string) => void;
 }
+
+// Never zoom past 1:1 when fitting, so a handful of nodes (e.g. one
+// isolated namespace) doesn't fill the screen.
+const FIT_VIEW = { padding: 0.15, maxZoom: 1 };
+
+// Default card size for nodes without an explicit style size; only used to
+// pad the bounds when fitting.
+const FIT_NODE_W = 220;
+const FIT_NODE_H = 80;
+
+// Viewport that fits every top-level node, computed from layout positions.
+// React Flow's fitView only sees nodes it has measured, and with viewport
+// virtualization most nodes are never mounted, so it fit the wrong area.
+function viewportForLayout(
+  nodes: Node<CustomNodeData>[],
+  size: { width: number; height: number },
+): { x: number; y: number; zoom: number } | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    if (n.parentId) continue; // inside a group whose box already covers it
+    const w = typeof n.style?.width === 'number' ? n.style.width : FIT_NODE_W;
+    const h = typeof n.style?.height === 'number' ? n.style.height : FIT_NODE_H;
+    minX = Math.min(minX, n.position.x);
+    minY = Math.min(minY, n.position.y);
+    maxX = Math.max(maxX, n.position.x + w);
+    maxY = Math.max(maxY, n.position.y + h);
+  }
+  if (!isFinite(minX)) return null;
+  const bw = maxX - minX, bh = maxY - minY;
+  const usable = 1 - 2 * FIT_VIEW.padding;
+  const zoom = Math.min(FIT_VIEW.maxZoom, Math.max(MIN_ZOOM, Math.min((size.width * usable) / bw, (size.height * usable) / bh)));
+  return {
+    x: size.width / 2 - (minX + bw / 2) * zoom,
+    y: size.height / 2 - (minY + bh / 2) * zoom,
+    zoom,
+  };
+}
+
+const MIN_ZOOM = 0.2;
+
+// Past this many nodes React Flow only mounts what's inside the viewport.
+const VIRTUALIZE_NODES = 200;
 
 function getConnectedNodeIds(nodeId: string, edges: GraphEdge[]) {
   const sources = new Set<string>();
@@ -72,30 +118,55 @@ function buildNodeNamespaceMap(graph: Graph): Map<string, string> {
   return nsMap;
 }
 
-// Count how many routes_to edges originate from a node (for service "→ N pods" count).
-function countRoutesToTargets(nodeId: string, edges: Graph['edges']): number {
-  return edges.filter(e => e.source === nodeId && e.type === 'routes_to').length;
-}
-
-// Count children in a namespace by type.
-function countChildrenByType(nsId: string, nodes: Graph['nodes'], types: Set<string>): number {
-  return nodes.filter(n => n.parent === nsId && types.has(n.type)).length;
+// Edge-derived per-node counts, computed in one pass. Doing these per node
+// (filtering every edge for every node) was O(nodes x edges) and dominated
+// layout time on large clusters.
+function edgeCounts(edges: GraphEdge[]) {
+  const degree = new Map<string, number>();
+  const routesTo = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+    if (e.type === 'routes_to') routesTo.set(e.source, (routesTo.get(e.source) ?? 0) + 1);
+  }
+  return { degree, routesTo };
 }
 
 function computeLayout(
   graph: Graph,
   layoutMode: LayoutMode,
   savedPositions: Map<string, { x: number; y: number; isPinned?: boolean }>,
-  viewportSize: { width: number; height: number }
+  viewportSize: { width: number; height: number },
+  namespaces: Map<string, NamespaceSummary>,
+  onToggleCollapse: ((namespaceName: string) => void) | undefined,
 ): {
   nodes: Node<CustomNodeData>[];
   edges: Edge<CustomEdgeData>[];
 } {
   const isSwimLane = layoutMode === 'swimlane';
+  const { degree, routesTo } = edgeCounts(graph.edges);
+
+  // Namespace data shared by both render paths.
+  const namespaceData = (nodeId: string, health: CustomNodeData['health']) => {
+    const summary = namespaces.get(nodeId);
+    if (!summary) return {};
+    return {
+      health: summary.collapsed ? worstHealth(summary.healthCounts, health) : health,
+      workloadCount: summary.workloadCount,
+      podCount: summary.podCount,
+      serviceCount: summary.serviceCount,
+      healthCounts: summary.healthCounts,
+      collapsed: summary.collapsed,
+      onToggleCollapse,
+    };
+  };
 
   // ── Swimlane layout ─────────────────────────────────────────────────
   if (isSwimLane) {
-    const { positions: swimPositions, laneBounds } = calculateSwimlaneLayout(graph);
+    const { positions: swimPositions, laneBounds } = calculateSwimlaneLayout(
+      graph,
+      id => namespaces.get(id)?.collapsed ?? false,
+    );
     const nodeNsMap = buildNodeNamespaceMap(graph);
 
     // Merge with saved pinned positions.
@@ -106,12 +177,8 @@ function computeLayout(
       }
     });
 
-    // Compute per-node enriched data.
-    const workloadTypes = new Set(['deployment', 'statefulset', 'daemonset']);
-    const podTypes = new Set(['pod']);
-
     const nodes: Node<CustomNodeData>[] = graph.nodes.map(node => {
-      const connectionCount = countConnections(node.id, graph.edges);
+      const connectionCount = degree.get(node.id) ?? 0;
       const priority = calculatePriority(node, connectionCount);
       const savedPos = savedPositions.get(node.id);
       const position = finalPositions.get(node.id) || { x: 0, y: 0 };
@@ -120,20 +187,8 @@ function computeLayout(
       // Enriched metadata for per-type rendering.
       const metadata = node.metadata ?? {};
 
-      // Namespace lane header: child counts.
-      let workloadCount: number | undefined;
-      let podCount: number | undefined;
-      let routesToCount: number | undefined;
-
-      if (isGroup) {
-        workloadCount = countChildrenByType(node.id, graph.nodes, workloadTypes);
-        podCount = countChildrenByType(node.id, graph.nodes, podTypes);
-      }
-
       // Service: routes_to count.
-      if (node.type === 'k8s_service') {
-        routesToCount = countRoutesToTargets(node.id, graph.edges);
-      }
+      const routesToCount = node.type === 'k8s_service' ? (routesTo.get(node.id) ?? 0) : undefined;
 
       const rfNode: Node<CustomNodeData> = {
         id: node.id,
@@ -153,9 +208,8 @@ function computeLayout(
           isSwimlane: true,
           // K8s enriched data
           metadata,
-          workloadCount,
-          podCount,
           routesToCount,
+          ...(isGroup ? namespaceData(node.id, node.health) : {}),
         },
       };
 
@@ -249,11 +303,13 @@ function computeLayout(
   }
 
   const nodes: Node<CustomNodeData>[] = graph.nodes.map(node => {
-    const connectionCount = countConnections(node.id, graph.edges);
+    const connectionCount = degree.get(node.id) ?? 0;
     const priority = calculatePriority(node, connectionCount);
     const savedPos = savedPositions.get(node.id);
-    const isGroup = Boolean(node.metadata?.group);
-    const groupBox = isGroup ? groupBounds.get(node.id) : undefined;
+    const groupBox = node.metadata?.group ? groupBounds.get(node.id) : undefined;
+    // A group with nothing inside (e.g. a collapsed namespace) renders as a
+    // regular card rather than an empty container.
+    const isGroup = groupBox !== undefined;
 
     let position = finalPositions.get(node.id) || { x: 0, y: 0 };
     let parentId: string | undefined;
@@ -286,6 +342,7 @@ function computeLayout(
         isPinned: savedPos?.isPinned || false,
         isGroup,
         metadata: node.metadata,
+        ...(node.type === 'namespace' ? namespaceData(node.id, node.health) : {}),
       },
     };
     if (isGroup && groupBox) {
@@ -370,8 +427,10 @@ function GraphCanvasInner({
   isLoading,
   error,
   onRetry,
+  namespaces,
+  onToggleCollapse,
 }: GraphCanvasProps) {
-  const { fitView } = useReactFlow();
+  const { setViewport } = useReactFlow();
   const prevNodeCountRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
   const { savedPositions, savePosition, clearLayout } = useLayoutPersistence(graph, layoutMode);
@@ -398,6 +457,24 @@ function GraphCanvasInner({
     return () => ro.disconnect();
   }, []);
 
+  // Memo 1: Expensive layout computation — NOT dependent on selectedNodeId
+  const { layoutNodes, layoutEdges } = useMemo(() => {
+    if (!graph?.nodes) return { layoutNodes: [], layoutEdges: [] };
+    const { nodes, edges } = computeLayout(graph, layoutMode, savedPositions, viewportSize, namespaces ?? new Map(), onToggleCollapse);
+    return { layoutNodes: nodes, layoutEdges: edges };
+  }, [graph, layoutMode, savedPositions, viewportSize, namespaces, onToggleCollapse]);
+
+  // Latest layout + size for deferred fits (they run from timers).
+  const fitInputRef = useRef({ layoutNodes, viewportSize });
+  useEffect(() => {
+    fitInputRef.current = { layoutNodes, viewportSize };
+  }, [layoutNodes, viewportSize]);
+  const fitView = useCallback((opts: { duration?: number } = {}) => {
+    const { layoutNodes: ln, viewportSize: vs } = fitInputRef.current;
+    const vp = viewportForLayout(ln, vs);
+    if (vp) setViewport(vp, { duration: opts.duration });
+  }, [setViewport]);
+
   // Layout transition animation — subscribe to layoutMode changes via effect
   useEffect(() => {
     if (prevLayoutModeRef.current === layoutMode) return;
@@ -407,17 +484,10 @@ function GraphCanvasInner({
     clearTimeout(transitionTimerRef.current);
     transitionTimerRef.current = setTimeout(() => {
       setIsTransitioning(false);
-      fitView({ padding: 0.15, duration: 500 });
+      fitView({ duration: 500 });
     }, 100);
     return () => clearTimeout(transitionTimerRef.current);
   }, [layoutMode, fitView]);
-
-  // Memo 1: Expensive layout computation — NOT dependent on selectedNodeId
-  const { layoutNodes, layoutEdges } = useMemo(() => {
-    if (!graph?.nodes) return { layoutNodes: [], layoutEdges: [] };
-    const { nodes, edges } = computeLayout(graph, layoutMode, savedPositions, viewportSize);
-    return { layoutNodes: nodes, layoutEdges: edges };
-  }, [graph, layoutMode, savedPositions, viewportSize]);
 
   // Memo 2: Cheap highlighting — runs on node click, no layout recomputation
   const { flowNodes, flowEdges } = useMemo(() => {
@@ -438,7 +508,7 @@ function GraphCanvasInner({
     const count = graph?.nodes?.length ?? 0;
     if (count > 0 && count !== prevNodeCountRef.current) {
       prevNodeCountRef.current = count;
-      setTimeout(() => fitView({ padding: 0.15, duration: 500 }), 100);
+      setTimeout(() => fitView({ duration: 500 }), 100);
     }
   }, [graph?.nodes?.length, fitView]);
 
@@ -448,7 +518,7 @@ function GraphCanvasInner({
     if (resetKey === undefined || resetKey === prevResetKeyRef.current) return;
     prevResetKeyRef.current = resetKey;
     clearLayout();
-    setTimeout(() => fitView({ padding: 0.15, duration: 500 }), 50);
+    setTimeout(() => fitView({ duration: 500 }), 50);
   }, [resetKey, clearLayout, fitView]);
 
   const nodesWithSelection = useMemo(() => {
@@ -540,7 +610,11 @@ function GraphCanvasInner({
   }
 
   return (
-    <div ref={canvasRef} className={`${styles.canvas} ${isTransitioning ? styles.transitioning : ''}`}>
+    <div
+      ref={canvasRef}
+      className={`${styles.canvas} ${isTransitioning ? styles.transitioning : ''}`}
+      data-calm={nodes.length > VIRTUALIZE_NODES}
+    >
       <ReactFlow
         nodes={nodesWithSelection}
         edges={edges}
@@ -553,10 +627,11 @@ function GraphCanvasInner({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.15 }}
-        minZoom={0.2}
+        fitViewOptions={FIT_VIEW}
+        minZoom={MIN_ZOOM}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
+        onlyRenderVisibleElements={nodes.length > VIRTUALIZE_NODES}
         defaultEdgeOptions={{ type: 'custom' }}
       >
         <EdgeMarkerDefs />

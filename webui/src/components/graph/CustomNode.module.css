@@ -242,6 +242,10 @@
   font-weight: var(--weight-namespace, 600);
   color: var(--text-primary);
   margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .laneHeaderStats {
@@ -251,6 +255,8 @@
 }
 
 .statChip {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: var(--text-2xs);
   font-family: var(--font-mono);
   color: var(--text-muted);
@@ -263,6 +269,68 @@
   composes: statChip;
   color: var(--status-healthy);
   background: var(--status-healthy-bg);
+}
+
+/* Namespace collapse */
+.laneHeaderCollapsed {
+  border-radius: var(--radius-md);
+}
+
+.collapseToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.collapseToggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-interactive);
+}
+
+.collapseToggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--transition-fast);
+}
+
+.chevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.statChip_unhealthy {
+  composes: statChip;
+  color: var(--status-unhealthy);
+  background: var(--status-unhealthy-bg);
+}
+
+.statChip_degraded {
+  composes: statChip;
+  color: var(--status-degraded);
+  background: var(--status-degraded-bg);
+}
+
+.collapsedCard {
+  min-width: 220px;
+}
+
+.collapsedTally {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.collapsedTally:empty {
+  display: none;
 }
 
 /* Swimlane card nodes (service, workload, pod) */
@@ -393,4 +461,13 @@
 .pulseUnhealthy .card {
   --pulse-color: rgba(239, 68, 68, 0.35);
   animation: healthPulse var(--pulse-duration-unhealthy, 1.2s) var(--ease-smooth) infinite;
+}
+
+/* Large graphs: hundreds of pulsing box-shadows repaint every frame and keep
+   the main thread busy while idle. The health dot still carries the state. */
+:global([data-calm='true']) .pulseDegraded .swimCard,
+:global([data-calm='true']) .pulseDegraded .card,
+:global([data-calm='true']) .pulseUnhealthy .swimCard,
+:global([data-calm='true']) .pulseUnhealthy .card {
+  animation: none;
 }
