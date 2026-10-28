@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start N tiny HTTP containers (traefik/whoami, ~5MB RSS each) that graph-go's
+# Start N tiny HTTP containers (traefik/whoami, under 1MB RSS each) that graph-go's
 # Docker discovery picks up as http services. Use with a config that has
 # docker discovery enabled (e.g. the default one) to exercise many containers
 # and container churn.

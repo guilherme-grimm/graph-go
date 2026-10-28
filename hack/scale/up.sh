@@ -9,7 +9,7 @@
 #
 # Re-running with bigger numbers scales the existing cluster up in place.
 # Writes the kubeconfig to hack/scale/.kubeconfig so your current context is
-# left alone. Point graph-go at it with hack/scale/config.yaml.
+# left alone. Point graph-go at it with hack/scale/scale.yaml.
 set -euo pipefail
 
 NAMESPACES=${1:-20}
@@ -111,4 +111,4 @@ for _ in $(seq 1 120); do
 done
 
 echo "Cluster $CLUSTER ready: $NAMESPACES ns x $DEPLOYS deploys x $REPLICAS replicas (~$want pods)."
-echo "Run: graph-go serve -c $DIR/config.yaml"
+echo "Run: graph-go serve -c $DIR/scale.yaml"
