@@ -42,6 +42,12 @@ var classificationRules = []classificationRule{
 		port:     9000,
 	},
 	{
+		pattern:  "rustfs",
+		excludes: []string{"exporter"},
+		svcType:  TypeS3,
+		port:     9000,
+	},
+	{
 		pattern:  "redis",
 		excludes: []string{"exporter", "commander", "insight"},
 		svcType:  TypeRedis,

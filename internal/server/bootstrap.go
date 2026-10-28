@@ -151,24 +151,34 @@ func discoverAll(discoverers []discovery.Discoverer, logger *zap.SugaredLogger) 
 	return all
 }
 
+// dockerDiscoveryConfig maps config onto the discoverer. An unset socket stays
+// empty so the Docker client honours DOCKER_HOST (e.g. a read-only socket
+// proxy) before falling back to the platform default socket.
+func dockerDiscoveryConfig(cfg *config.Config) docker.DockerDiscoveryConfig {
+	return docker.DockerDiscoveryConfig{
+		Socket:       cfg.Docker.Socket,
+		Network:      cfg.Docker.Network,
+		IgnoreImages: cfg.Docker.IgnoreImages,
+	}
+}
+
 func buildDockerDiscovery(cfg *config.Config, logger *zap.SugaredLogger) *docker.DockerDiscovery {
 	if !shouldEnableDocker(cfg) {
 		return nil
 	}
 
-	socket := "/var/run/docker.sock"
-	if cfg.Docker.Socket != "" {
-		socket = cfg.Docker.Socket
-	}
-	network := cfg.Docker.Network
-	ignoreImages := cfg.Docker.IgnoreImages
-
-	dd, err := docker.NewDockerDiscovery(docker.DockerDiscoveryConfig{
-		Socket:       socket,
-		Network:      network,
-		IgnoreImages: ignoreImages,
-	}, logger)
+	dd, err := docker.NewDockerDiscovery(dockerDiscoveryConfig(cfg), logger)
 	if err != nil {
+		// Only used to word the permission hint; with no socket configured the
+		// client connects via DOCKER_HOST or the platform default socket.
+		socket := cfg.Docker.Socket
+		if socket == "" {
+			socket = "/var/run/docker.sock"
+		}
+		if hint := docker.SocketAccessHint(socket, err); hint != "" {
+			logger.Warnw("docker discovery unavailable: permission denied on Docker socket, falling back to YAML-only", "socket", socket, "fix", hint)
+			return nil
+		}
 		logger.Warnw("docker discovery unavailable, falling back to YAML-only", "err", err)
 		return nil
 	}

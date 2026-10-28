@@ -1,21 +1,45 @@
 services:
+  # graph-go only reads the Docker API (ping, version, list/inspect containers,
+  # events). The proxy allows exactly that and answers 403 to everything else,
+  # so graph-go never holds the daemon-level control the raw socket grants
+  # (a `:ro` bind mount does not restrict API calls). It also runs as root
+  # inside its own container, so no host-specific socket gid is needed.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    environment:
+      CONTAINERS: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      graphgo.ignore: "true"
+    networks:
+      - graph-go
+
   graph-go:
     build:
       context: .
     ports:
       - "8080:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./conf/config.docker.yaml:/app/conf/config.yaml:ro
       - backend-data:/app/data
+    # Docker API through the read-only proxy below, never the raw socket.
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
     labels:
       graphgo.ignore: "true"
     depends_on:
+      docker-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       mongo:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
       api-gateway:
         condition: service_healthy
@@ -136,19 +160,18 @@ services:
     networks:
       - graph-go
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  rustfs:
+    image: rustfs/rustfs:1.0.0
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: graphgo
+      RUSTFS_SECRET_KEY: graphgo-secret
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -164,16 +187,20 @@ services:
     ports:
       - "8081:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - backend-data:/app/data
+    # Docker API through the read-only proxy below, never the raw socket.
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
     labels:
       graphgo.ignore: "true"
     depends_on:
+      docker-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       mongo:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
       api-gateway:
         condition: service_healthy
@@ -188,17 +215,20 @@ services:
     networks:
       - graph-go
 
-  minio-init:
-    image: minio/mc:latest
+  rustfs-init:
+    image: rustfs/rustfs:1.0.0
     labels:
       graphgo.ignore: "true"
+    environment:
+      RUSTFS_ACCESS_KEY: graphgo
+      RUSTFS_SECRET_KEY: graphgo-secret
     depends_on:
-      minio:
+      rustfs:
         condition: service_healthy
     volumes:
-      - ./docker/init-minio.sh:/init-minio.sh:ro
+      - ./docker/init-rustfs.sh:/init-rustfs.sh:ro
     entrypoint: /bin/sh
-    command: /init-minio.sh
+    command: /init-rustfs.sh
     networks:
       - graph-go
 
@@ -206,7 +236,7 @@ volumes:
   backend-data:
   postgres-data:
   mongo-data:
-  minio-data:
+  rustfs-data:
 
 networks:
   graph-go:

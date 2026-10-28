@@ -79,10 +79,13 @@ One container, one port. Mount the Docker socket read-only and graph-go auto-dis
 ```bash
 docker run -d -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  --group-add "$(stat -c %g /var/run/docker.sock)" \
   ghcr.io/guilherme-grimm/graph-go:latest
 ```
 
-> graph-go only reads from the Docker socket. The `:ro` flag enforces this — keep it.
+> The image runs as a non-root user, so `--group-add` grants it the socket's group (`stat -c` is Linux; on macOS start with `--group-add 0`). If Docker discovery still falls back to YAML-only, the startup log says what to change (including the exact `--group-add` value when that is the fix).
+>
+> graph-go only reads from the Docker API (list, inspect, events). `:ro` does not restrict API calls, though: anything that can reach the socket can control the daemon. For least privilege, put a read-only API proxy such as [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) in front of the socket and point graph-go at it with `DOCKER_HOST=tcp://<proxy>:2375` (no socket mount or `--group-add` needed). [`docker-compose.demo.yml`](docker-compose.demo.yml) shows a working setup.
 
 Open **http://localhost:8080**. Auto-discovery handles Docker containers and (when a kubeconfig or in-cluster service account is present) Kubernetes resources without any config file.
 
@@ -131,7 +134,7 @@ Typical flow:
 |---|---|
 | `8080` | graph-go (UI + API + WebSocket — production) |
 | `5173` | Vite dev server (development only — see [CONTRIBUTING.md](CONTRIBUTING.md)) |
-| `9001` | MinIO console (demo stack only) |
+| `9001` | RustFS console at `/rustfs/console/` (demo stack only) |
 
 ---
 
@@ -146,6 +149,7 @@ To use a config file with the Docker run above:
 ```bash
 docker run -d -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  --group-add "$(stat -c %g /var/run/docker.sock)" \
   -v $(pwd)/conf/config.yaml:/app/conf/config.yaml:ro \
   ghcr.io/guilherme-grimm/graph-go:latest
 ```
@@ -260,7 +264,7 @@ Edges represent relationships (`contains`, `foreign_key`, `routes_to`, etc.).
 - MySQL 8
 - Redis 7
 - Elasticsearch 8
-- MinIO (S3-compatible)
+- RustFS (S3-compatible)
 
 ---
 
@@ -280,7 +284,7 @@ Runs without Docker. Includes pure function tests and HTTP handler tests.
 go test -tags=integration -v -timeout=5m ./internal/adapters/...
 ```
 
-Requires Docker. Uses [testcontainers-go](https://golang.testcontainers.org/) to spin up real database instances (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, MinIO) — no mocks.
+Requires Docker. Uses [testcontainers-go](https://golang.testcontainers.org/) to spin up real database instances (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, RustFS for S3) — no mocks.
 
 Every adapter runs through the **contract test suite** (`adaptertest.RunContractTests`) which validates:
 - Connect/disconnect lifecycle

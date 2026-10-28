@@ -72,3 +72,16 @@ func TestShouldEnableDockerForOSIgnoresStatWhenWindows(t *testing.T) {
 		t.Fatal("expected windows path not to use os.Stat")
 	}
 }
+
+func TestDockerDiscoveryConfig_UnsetSocketDefersToDockerHost(t *testing.T) {
+	// An empty socket makes the client read DOCKER_HOST; defaulting it here
+	// would pin the client to /var/run/docker.sock and ignore a socket proxy.
+	if got := dockerDiscoveryConfig(&config.Config{}).Socket; got != "" {
+		t.Errorf("unset socket should stay empty, got %q", got)
+	}
+	cfg := &config.Config{}
+	cfg.Docker.Socket = "/custom/docker.sock"
+	if got := dockerDiscoveryConfig(cfg).Socket; got != "/custom/docker.sock" {
+		t.Errorf("explicit socket should pass through, got %q", got)
+	}
+}
