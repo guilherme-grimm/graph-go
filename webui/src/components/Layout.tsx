@@ -2,13 +2,42 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GraphCanvas } from './graph';
 import { NodeInspector, SearchOverlay, EdgeInspector } from './panels';
-import HeaderBar, { type Filters, type LayoutMode, nodeSource, type NodeSource } from './HeaderBar';
+import HeaderBar, { type LayoutMode } from './HeaderBar';
 import { ErrorBoundary, EmptyState } from './ui';
 import { useWebSocket, useAppShortcuts } from '../hooks';
 import { useGraph as useGraphData } from '../api';
-import { hasNamespaces } from '../utils';
+import {
+  hasNamespaces,
+  applyFilters,
+  collapseNamespaces,
+  activeFilterCount as countActiveFilters,
+  filtersFromParams,
+  writeFiltersToParams,
+  collapseFromParams,
+  writeCollapseToParams,
+  isCollapsed as isNamespaceCollapsed,
+  toggleCollapsed,
+  namespaceNames,
+  namespaceOf,
+  ALL_COLLAPSED,
+  NO_COLLAPSE,
+  EMPTY_FILTERS,
+  LARGE_GRAPH_NODES,
+  type CollapseState,
+  type Filters,
+} from '../utils';
 import type { Graph, GraphEdge } from '../types';
 import styles from './Layout.module.css';
+
+// Query string to carry across node navigation: filters and collapse state
+// stay, but a selected edge doesn't (the URL restore effect would reopen it
+// next to the node). Read live, since setSearchParams may have just changed it.
+function searchWithoutEdge(): string {
+  const params = new URLSearchParams(window.location.search);
+  params.delete('edge');
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
 
 export default function Layout() {
   const { nodeId: urlNodeId } = useParams<{ nodeId: string }>();
@@ -18,16 +47,10 @@ export default function Layout() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(urlNodeId ?? null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [filters, setFilters] = useState<Filters>(() => {
-    const typesParam = searchParams.get('types');
-    const healthParam = searchParams.get('health');
-    const sourcesParam = searchParams.get('sources');
-    return {
-      types: typesParam ? typesParam.split(',').filter(Boolean) as Filters['types'] : [],
-      health: healthParam ? healthParam.split(',').filter(Boolean) as Filters['health'] : [],
-      sources: sourcesParam ? sourcesParam.split(',').filter(Boolean) as NodeSource[] : [],
-    };
-  });
+  const [filters, setFilters] = useState<Filters>(() => filtersFromParams(searchParams));
+  // null = nothing chosen yet; the default then depends on graph size.
+  const [collapseChoice, setCollapseChoice] = useState<CollapseState | null>(() => collapseFromParams(searchParams));
+  const [layoutNotice, setLayoutNotice] = useState<{ from: LayoutMode; nodeCount: number } | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(
     () => (localStorage.getItem('graph-layout-mode') as LayoutMode) || 'hierarchical'
   );
@@ -36,6 +59,7 @@ export default function Layout() {
   // Persist layout mode to localStorage
   const handleLayoutChange = useCallback((mode: LayoutMode) => {
     setLayoutMode(mode);
+    setLayoutNotice(null);
     localStorage.setItem('graph-layout-mode', mode);
   }, []);
 
@@ -47,21 +71,7 @@ export default function Layout() {
     setFilters(newFilters);
     setSearchParams(prev => {
       const params = new URLSearchParams(prev);
-      if (newFilters.types.length > 0) {
-        params.set('types', newFilters.types.join(','));
-      } else {
-        params.delete('types');
-      }
-      if (newFilters.health.length > 0) {
-        params.set('health', newFilters.health.join(','));
-      } else {
-        params.delete('health');
-      }
-      if (newFilters.sources.length > 0) {
-        params.set('sources', newFilters.sources.join(','));
-      } else {
-        params.delete('sources');
-      }
+      writeFiltersToParams(newFilters, params);
       return params;
     }, { replace: true });
   }, [setSearchParams]);
@@ -69,17 +79,55 @@ export default function Layout() {
   const { data: apiGraph, isLoading, error, refetch } = useGraphData();
   const graph: Graph | undefined = apiGraph;
 
-  // Auto-detect swimlane mode for k8s graphs when no explicit layout was saved.
+  const nodeCount = graph?.nodes?.length ?? 0;
+  const isLargeGraph = nodeCount > LARGE_GRAPH_NODES;
+  const graphHasNamespaces = useMemo(() => (graph ? hasNamespaces(graph) : false), [graph]);
+
+  // Auto-detect swimlane mode for k8s graphs when no explicit layout was
+  // saved, and switch to it once a k8s graph gets large: other layouts turn
+  // into a haystack there and can stall the tab. Runs once per page load, so
+  // switching back by hand sticks.
   const autoDetectedRef = useRef(false);
   useEffect(() => {
-    if (autoDetectedRef.current || !graph?.nodes?.length) return;
+    if (autoDetectedRef.current || !nodeCount) return;
+    autoDetectedRef.current = true;
+    if (!graphHasNamespaces || layoutMode === 'swimlane') return;
     const savedMode = localStorage.getItem('graph-layout-mode');
-    if (!savedMode && hasNamespaces(graph)) {
+    if (!savedMode) {
       setLayoutMode('swimlane');
       localStorage.setItem('graph-layout-mode', 'swimlane');
+    } else if (isLargeGraph) {
+      setLayoutMode('swimlane');
+      setLayoutNotice({ from: layoutMode, nodeCount });
     }
-    autoDetectedRef.current = true;
-  }, [graph]);
+  }, [nodeCount, graphHasNamespaces, isLargeGraph, layoutMode]);
+
+  // Large clusters start with every namespace collapsed unless the URL says
+  // otherwise.
+  const collapse = collapseChoice ?? (isLargeGraph && graphHasNamespaces ? ALL_COLLAPSED : NO_COLLAPSE);
+  const collapseRef = useRef(collapse);
+  useEffect(() => {
+    collapseRef.current = collapse;
+  }, [collapse]);
+
+  const updateCollapse = useCallback((next: CollapseState) => {
+    setCollapseChoice(next);
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      writeCollapseToParams(next, params);
+      return params;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const handleToggleCollapse = useCallback((nsName: string) => {
+    updateCollapse(toggleCollapsed(collapseRef.current, nsName));
+  }, [updateCollapse]);
+
+  const handleCollapseAll = useCallback((collapsed: boolean) => {
+    updateCollapse(collapsed ? ALL_COLLAPSED : NO_COLLAPSE);
+  }, [updateCollapse]);
+
+  const isCollapsed = useCallback((nsName: string) => isNamespaceCollapsed(collapse, nsName), [collapse]);
 
   const { status: wsStatus } = useWebSocket();
 
@@ -97,7 +145,7 @@ export default function Layout() {
         }, { replace: true });
       } else if (selectedNodeId) {
         setSelectedNodeId(null);
-        navigate('/', { replace: true });
+        navigate({ pathname: '/', search: searchWithoutEdge() }, { replace: true });
       }
     }, [searchOpen, selectedEdge, selectedNodeId, navigate, setSearchParams]),
   });
@@ -106,18 +154,28 @@ export default function Layout() {
     setSelectedNodeId(nodeId);
     setSelectedEdge(null);
     if (nodeId) {
-      navigate(`/node/${nodeId}`, { replace: true });
+      navigate({ pathname: `/node/${nodeId}`, search: searchWithoutEdge() }, { replace: true });
     } else {
-      navigate('/', { replace: true });
+      navigate({ pathname: '/', search: searchWithoutEdge() }, { replace: true });
     }
   }, [navigate]);
 
   const handleSearchSelect = useCallback((nodeId: string) => {
+    // Jumping to something inside a collapsed namespace opens that namespace.
+    if (graph) {
+      const nodeById = new Map(graph.nodes.map(n => [n.id, n]));
+      const node = nodeById.get(nodeId);
+      const nsId = node && node.type !== 'namespace' ? namespaceOf(node, nodeById) : undefined;
+      const nsName = nsId ? nodeById.get(nsId)?.name : undefined;
+      if (nsName && isNamespaceCollapsed(collapseRef.current, nsName)) {
+        updateCollapse(toggleCollapsed(collapseRef.current, nsName));
+      }
+    }
     setSelectedNodeId(nodeId);
     setSelectedEdge(null);
     setSearchOpen(false);
-    navigate(`/node/${nodeId}`, { replace: true });
-  }, [navigate]);
+    navigate({ pathname: `/node/${nodeId}`, search: searchWithoutEdge() }, { replace: true });
+  }, [navigate, graph, updateCollapse]);
 
   const handleEdgeClick = useCallback((edge: GraphEdge) => {
     setSelectedEdge(edge);
@@ -139,32 +197,27 @@ export default function Layout() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph?.edges]);
 
-  // Filter graph for the canvas while keeping unfiltered graph for NodeInspector
-  const filteredGraph = useMemo((): Graph | undefined => {
-    if (!graph?.nodes) return undefined;
-    if (filters.types.length === 0 && filters.health.length === 0 && filters.sources.length === 0) return graph;
+  // Filter, then collapse, for the canvas; NodeInspector keeps the full graph.
+  const filteredGraph = useMemo(() => (graph?.nodes ? applyFilters(graph, filters) : undefined), [graph, filters]);
+  const view = useMemo(
+    () => (filteredGraph ? collapseNamespaces(filteredGraph, collapse) : undefined),
+    [filteredGraph, collapse],
+  );
+  const namespaces = useMemo(() => namespaceNames(graph), [graph]);
 
-    const filteredNodes = graph.nodes.filter(node => {
-      if (filters.types.length > 0 && !filters.types.includes(node.type)) return false;
-      if (filters.health.length > 0 && !filters.health.includes(node.health)) return false;
-      if (filters.sources.length > 0 && !filters.sources.includes(nodeSource(node.type))) return false;
-      return true;
-    });
+  // Refit when what's shown changes because of a filter; collapse toggles
+  // deliberately don't refit.
+  const fitKey = useMemo(() => {
+    const params = new URLSearchParams();
+    writeFiltersToParams(filters, params);
+    return params.toString();
+  }, [filters]);
 
-    const nodeIds = new Set(filteredNodes.map(n => n.id));
-    const filteredEdges = graph.edges.filter(
-      edge => nodeIds.has(edge.source) && nodeIds.has(edge.target)
-    );
-
-    return { nodes: filteredNodes, edges: filteredEdges };
-  }, [graph, filters]);
-
-  const hasActiveFilters = filters.types.length > 0 || filters.health.length > 0 || filters.sources.length > 0;
-  const isFilteredEmpty = hasActiveFilters && filteredGraph?.nodes?.length === 0 && (graph?.nodes?.length ?? 0) > 0;
-  const activeFilterCount = filters.types.length + filters.health.length + filters.sources.length;
+  const activeFilterCount = countActiveFilters(filters);
+  const isFilteredEmpty = activeFilterCount > 0 && filteredGraph?.nodes?.length === 0 && nodeCount > 0;
 
   const handleClearFilters = useCallback(() => {
-    handleFilterChange({ types: [], health: [], sources: [] });
+    handleFilterChange(EMPTY_FILTERS);
   }, [handleFilterChange]);
 
   return (
@@ -179,6 +232,13 @@ export default function Layout() {
         onLayoutChange={handleLayoutChange}
         onResetPositions={handleResetPositions}
         wsStatus={wsStatus}
+        namespaces={namespaces}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={handleToggleCollapse}
+        onCollapseAll={handleCollapseAll}
+        layoutNotice={layoutNotice}
+        onDismissLayoutNotice={() => setLayoutNotice(null)}
+        isLargeGraph={isLargeGraph}
       />
 
       <div className={styles.graphArea}>
@@ -191,7 +251,10 @@ export default function Layout() {
             />
           ) : (
             <GraphCanvas
-              graph={filteredGraph}
+              graph={view?.graph}
+              namespaces={view?.namespaces}
+              onToggleCollapse={handleToggleCollapse}
+              fitKey={fitKey}
               selectedNodeId={selectedNodeId}
               onNodeSelect={handleNodeSelect}
               onEdgeClick={handleEdgeClick}

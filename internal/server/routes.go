@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"hash/fnv"
 	"net/http"
 	"sort"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/gorilla/mux"
 
+	"github.com/guilherme-grimm/graph-go/internal/graph"
 	"github.com/guilherme-grimm/graph-go/internal/graph/health"
 	"github.com/guilherme-grimm/graph-go/internal/webui"
 )
@@ -176,7 +179,16 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	var prevNodeKey string
+	var (
+		seeded     bool
+		prevPrint  uint64
+		prevHealth = map[string]string{}
+		// resendFull makes the next tick send every node's health, not just
+		// changes. Set after the first tick (its batch can arrive before the
+		// client has loaded the graph and be dropped) and after a topology
+		// change (the batch can land before the client's refetch finishes).
+		resendFull bool
+	)
 
 	for {
 		// Get the current graph to map adapter health to actual node IDs
@@ -185,66 +197,40 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warnw("websocket discover failed", "err", err)
 		}
 
-		// Detect graph topology changes (nodes added/removed)
 		if g != nil {
-			ids := make([]string, 0, len(g.Nodes))
-			for _, node := range g.Nodes {
-				ids = append(ids, node.Id)
-			}
-			sort.Strings(ids)
-			currentKey := strings.Join(ids, ",")
-
-			if prevNodeKey != "" && currentKey != prevNodeKey {
-				msg := map[string]any{
-					"type":    "graph_update",
-					"payload": map[string]any{},
-				}
-				data, jsonErr := json.Marshal(msg)
-				if jsonErr == nil {
-					if err := socket.Write(socketCtx, websocket.MessageText, data); err != nil {
-						return
-					}
-				}
-			}
-			prevNodeKey = currentKey
-		}
-
-		metrics := s.registry.HealthAll()
-
-		// Build a lookup from adapter name to its health status.
-		adapterHealth := make(map[string]string, len(metrics))
-		for _, m := range metrics {
-			adapterHealth[m.NodeID] = string(m.Status)
-		}
-
-		// Send a health update for each node. Adapter-owned nodes get their
-		// health via the adapter lookup; topology nodes (e.g. Kubernetes
-		// resources) carry health directly on Node.Health.
-		if g != nil {
-			for _, node := range g.Nodes {
-				adapterName, _ := node.Metadata["adapter"].(string)
-				healthStr, ok := adapterHealth[adapterName]
-				if !ok {
-					if node.Health == "" {
-						continue
-					}
-					healthStr = node.Health
-				}
-				msg := map[string]any{
-					"type": "health_update",
-					"payload": map[string]any{
-						"nodeId": node.Id,
-						"health": healthStr,
-					},
-				}
-				data, jsonErr := json.Marshal(msg)
-				if jsonErr != nil {
-					continue
-				}
-				if err := socket.Write(socketCtx, websocket.MessageText, data); err != nil {
+			// Detect graph topology changes (nodes added/removed).
+			fp := nodeSetFingerprint(g)
+			topologyChanged := seeded && fp != prevPrint
+			if topologyChanged {
+				if err := writeJSON(socketCtx, socket, wsMessage{Type: "graph_update", Payload: struct{}{}}); err != nil {
 					return
 				}
 			}
+			prevPrint = fp
+
+			// Ship only the health values that changed since the last tick, in
+			// one message. Per-node messages meant thousands of frames (and
+			// thousands of client re-renders) every tick on large clusters.
+			current := nodeHealths(g, s.registry.HealthAll())
+			base := prevHealth
+			if resendFull {
+				base = nil
+			}
+			updates := make([]healthUpdate, 0)
+			for id, h := range current {
+				if base[id] != h {
+					updates = append(updates, healthUpdate{NodeID: id, Health: h})
+				}
+			}
+			prevHealth = current
+			resendFull = !seeded || topologyChanged
+			if len(updates) > 0 {
+				sort.Slice(updates, func(i, j int) bool { return updates[i].NodeID < updates[j].NodeID })
+				if err := writeJSON(socketCtx, socket, wsMessage{Type: "health_batch", Payload: healthBatch{Updates: updates}}); err != nil {
+					return
+				}
+			}
+			seeded = true
 		}
 
 		select {
@@ -253,4 +239,62 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 		}
 	}
+}
+
+type wsMessage struct {
+	Type    string `json:"type"`
+	Payload any    `json:"payload"`
+}
+
+type healthUpdate struct {
+	NodeID string `json:"nodeId"`
+	Health string `json:"health"`
+}
+
+type healthBatch struct {
+	Updates []healthUpdate `json:"updates"`
+}
+
+func writeJSON(ctx context.Context, socket *websocket.Conn, msg wsMessage) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return nil
+	}
+	return socket.Write(ctx, websocket.MessageText, data)
+}
+
+// nodeHealths resolves the health of every node in g. Adapter-owned nodes get
+// their health via the adapter lookup; topology nodes (e.g. Kubernetes
+// resources) carry health directly on Node.Health. Nodes with neither are
+// left out.
+func nodeHealths(g *graph.Graph, metrics []health.HealthMetrics) map[string]string {
+	adapterHealth := make(map[string]string, len(metrics))
+	for _, m := range metrics {
+		adapterHealth[m.NodeID] = string(m.Status)
+	}
+	out := make(map[string]string, len(g.Nodes))
+	for _, node := range g.Nodes {
+		adapterName, _ := node.Metadata["adapter"].(string)
+		h, ok := adapterHealth[adapterName]
+		if !ok {
+			if node.Health == "" {
+				continue
+			}
+			h = node.Health
+		}
+		out[node.Id] = h
+	}
+	return out
+}
+
+// nodeSetFingerprint is an order-independent hash of g's node IDs, so a
+// changed node set can be detected without sorting and joining every ID.
+func nodeSetFingerprint(g *graph.Graph) uint64 {
+	var sum uint64
+	for _, node := range g.Nodes {
+		h := fnv.New64a()
+		h.Write([]byte(node.Id))
+		sum += h.Sum64()
+	}
+	return sum ^ uint64(len(g.Nodes))
 }

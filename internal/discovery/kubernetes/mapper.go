@@ -22,6 +22,10 @@ type appsWorkload struct {
 	NodeType nodes.NodeType
 	Meta     metav1.ObjectMeta
 	Selector *metav1.LabelSelector
+	// matcher is Selector parsed once; nil when it is missing, invalid or
+	// empty (which matches no pods). Parsing per pod dominated mapping time
+	// on large clusters.
+	matcher labels.Selector
 
 	// Replica status — populated for Deployment/StatefulSet, or ready/desired
 	// node counts for DaemonSet. health.go consumes these uniformly.
@@ -34,14 +38,14 @@ func workloadFromDeployment(d appsv1.Deployment) appsWorkload {
 	if d.Spec.Replicas != nil {
 		desired = *d.Spec.Replicas
 	}
-	return appsWorkload{
+	return withMatcher(appsWorkload{
 		Kind:         "deployment",
 		NodeType:     nodes.TypeDeployment,
 		Meta:         d.ObjectMeta,
 		Selector:     d.Spec.Selector,
 		DesiredCount: desired,
 		ReadyCount:   d.Status.ReadyReplicas,
-	}
+	})
 }
 
 func workloadFromStatefulSet(s appsv1.StatefulSet) appsWorkload {
@@ -49,25 +53,37 @@ func workloadFromStatefulSet(s appsv1.StatefulSet) appsWorkload {
 	if s.Spec.Replicas != nil {
 		desired = *s.Spec.Replicas
 	}
-	return appsWorkload{
+	return withMatcher(appsWorkload{
 		Kind:         "statefulset",
 		NodeType:     nodes.TypeStatefulSet,
 		Meta:         s.ObjectMeta,
 		Selector:     s.Spec.Selector,
 		DesiredCount: desired,
 		ReadyCount:   s.Status.ReadyReplicas,
-	}
+	})
 }
 
 func workloadFromDaemonSet(x appsv1.DaemonSet) appsWorkload {
-	return appsWorkload{
+	return withMatcher(appsWorkload{
 		Kind:         "daemonset",
 		NodeType:     nodes.TypeDaemonSet,
 		Meta:         x.ObjectMeta,
 		Selector:     x.Spec.Selector,
 		DesiredCount: x.Status.DesiredNumberScheduled,
 		ReadyCount:   x.Status.NumberReady,
+	})
+}
+
+func withMatcher(w appsWorkload) appsWorkload {
+	if w.Selector == nil {
+		return w
 	}
+	sel, err := metav1.LabelSelectorAsSelector(w.Selector)
+	if err != nil || sel.Empty() {
+		return w
+	}
+	w.matcher = sel
+	return w
 }
 
 // nodeID builds the canonical Kubernetes node ID: k8s-<namespace>-<kind>-<name>.
@@ -271,7 +287,7 @@ func mapPod(p corev1.Pod, workloads []appsWorkload, h health.Status) discovery.S
 
 	var edgeList []edges.Edge
 	for _, w := range workloads {
-		if !podMatchesWorkloadSelector(w.Selector, p.Labels) {
+		if w.matcher == nil || !w.matcher.Matches(labels.Set(p.Labels)) {
 			continue
 		}
 		workloadID := nodeID(w.Meta.Namespace, w.Kind, w.Meta.Name)
@@ -348,17 +364,6 @@ func mapService(s corev1.Service, podsInNS []corev1.Pod, h health.Status) discov
 			"namespace": s.Namespace,
 		},
 	}
-}
-
-func podMatchesWorkloadSelector(sel *metav1.LabelSelector, podLabels map[string]string) bool {
-	if sel == nil {
-		return false
-	}
-	s, err := metav1.LabelSelectorAsSelector(sel)
-	if err != nil || s.Empty() {
-		return false
-	}
-	return s.Matches(labels.Set(podLabels))
 }
 
 func podMatchesServiceSelector(sel, podLabels map[string]string) bool {

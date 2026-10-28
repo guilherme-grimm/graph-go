@@ -33,6 +33,14 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+release:
+  # Tags like v0.4.0-rc.1 are published as GitHub prereleases, not "latest".
+  prerelease: auto
+
+snapshot:
+  # Used by the nightly workflow (`goreleaser release --snapshot`).
+  version_template: "{{ incpatch .Version }}-nightly.{{ .ShortCommit }}"
+
 changelog:
   sort: asc
   filters:

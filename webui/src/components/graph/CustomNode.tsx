@@ -21,6 +21,11 @@ export type CustomNodeData = Record<string, unknown> & {
   workloadCount?: number;
   podCount?: number;
   routesToCount?: number;
+  // Namespace collapse (see utils/graphView)
+  serviceCount?: number;
+  healthCounts?: Record<HealthStatus, number>;
+  collapsed?: boolean;
+  onToggleCollapse?: (namespaceName: string) => void;
 };
 
 type CustomNodeType = Node<CustomNodeData>;
@@ -236,23 +241,94 @@ const NodeIcon = ({ type }: { type: NodeType }) => {
 
 // ── Swimlane per-type subcomponents ──────────────────────────────────────
 
+function CollapseToggle({ name, collapsed, onToggle }: { name: string; collapsed?: boolean; onToggle?: (name: string) => void }) {
+  if (!onToggle) return null;
+  return (
+    <button
+      type="button"
+      className={`${styles.collapseToggle} nodrag nopan`}
+      onClick={e => {
+        e.stopPropagation();
+        onToggle(name);
+      }}
+      aria-expanded={!collapsed}
+      aria-label={collapsed ? `Expand namespace ${name}` : `Collapse namespace ${name}`}
+      title={collapsed ? 'Expand namespace' : 'Collapse namespace'}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={collapsed ? styles.chevronCollapsed : ''}>
+        <path d="M6 9l6 6 6-6" />
+      </svg>
+    </button>
+  );
+}
+
+// Health tally chips for a namespace: only non-healthy counts are called out,
+// since those are what someone scanning a big cluster is looking for.
+// "all healthy" means every child reported healthy, not merely no problems.
+function HealthTally({ counts }: { counts?: Record<HealthStatus, number> }) {
+  if (!counts) return null;
+  const problems = (['unhealthy', 'degraded'] as const).filter(h => counts[h] > 0);
+  const total = counts.healthy + counts.degraded + counts.unhealthy + counts.unknown;
+  if (total > 0 && counts.healthy === total) return <span className={styles.statChipGood}>all healthy</span>;
+  return (
+    <>
+      {problems.map(h => (
+        <span key={h} className={styles[`statChip_${h}`]}>{counts[h]} {h}</span>
+      ))}
+      {counts.unknown > 0 && <span className={styles.statChip}>{counts.unknown} unknown</span>}
+    </>
+  );
+}
+
 function NamespaceLaneHeader({ data, selected }: { data: CustomNodeData; selected: boolean }) {
-  const { name, health, workloadCount, podCount } = data;
-  const healthyCount = podCount ?? 0; // simplified — full rollup would need children health array
+  const { name, health, workloadCount, podCount, serviceCount, healthCounts, collapsed, onToggleCollapse } = data;
 
   return (
-    <div className={`${styles.laneHeader} ${selected ? styles.selected : ''}`}>
+    <div className={`${styles.laneHeader} ${collapsed ? styles.laneHeaderCollapsed : ''} ${selected ? styles.selected : ''}`}>
       <Handle type="target" position={Position.Left} className={styles.handle} id="left" />
       <Handle type="source" position={Position.Right} className={styles.handle} id="right" />
+      <CollapseToggle name={name} collapsed={collapsed} onToggle={onToggleCollapse} />
       <span className={`${styles.healthDot} ${styles[`health_${health}`]}`} />
       <div className={styles.iconWrapper}>
         <NodeIcon type="namespace" />
       </div>
-      <span className={styles.laneHeaderName}>{name}</span>
+      <span className={styles.laneHeaderName} title={name}>{name}</span>
       <div className={styles.laneHeaderStats}>
-        {(workloadCount ?? 0) > 0 && <span className={styles.statChip}>{workloadCount} workloads</span>}
+        {!collapsed && (serviceCount ?? 0) > 0 && <span className={styles.statChip}>{serviceCount} svc</span>}
+        {(workloadCount ?? 0) > 0 && <span className={styles.statChip}>{workloadCount} {collapsed ? 'wl' : 'workloads'}</span>}
         {(podCount ?? 0) > 0 && <span className={styles.statChip}>{podCount} pods</span>}
-        {healthyCount > 0 && health === 'healthy' && <span className={styles.statChipGood}>all healthy</span>}
+        <HealthTally counts={healthCounts} />
+      </div>
+    </div>
+  );
+}
+
+// A collapsed namespace outside swimlane: a card summarising what it holds.
+function CollapsedNamespaceCard({ data, selected }: { data: CustomNodeData; selected: boolean }) {
+  const { name, health, workloadCount, podCount, healthCounts, onToggleCollapse } = data;
+  const pulseClass = health === 'unhealthy' ? styles.pulseUnhealthy : health === 'degraded' ? styles.pulseDegraded : '';
+  return (
+    <div
+      className={`${styles.node} ${styles.collapsedCard} ${selected ? styles.selected : ''} ${pulseClass}`}
+      style={{ '--type-color': 'var(--type-k8s)' } as React.CSSProperties}
+    >
+      <Handle type="target" position={Position.Top} className={styles.handle} id="top" />
+      <Handle type="source" position={Position.Bottom} className={styles.handle} id="bottom" />
+      <div className={styles.card}>
+        <span className={`${styles.healthDot} ${styles[`health_${health}`]}`} />
+        <div className={styles.iconWrapper}>
+          <NodeIcon type="namespace" />
+        </div>
+        <div className={styles.info}>
+          <span className={styles.name} title={name}>{name}</span>
+          <span className={styles.type}>
+            {workloadCount ?? 0} wl · {podCount ?? 0} pods
+          </span>
+        </div>
+        <CollapseToggle name={name} collapsed onToggle={onToggleCollapse} />
+      </div>
+      <div className={styles.collapsedTally}>
+        <HealthTally counts={healthCounts} />
       </div>
     </div>
   );
@@ -398,6 +474,10 @@ function CustomNode({ data, selected }: NodeProps<CustomNodeType>) {
     // Fallthrough to default node for non-k8s types in a k8s graph.
   }
 
+  if (type === 'namespace' && data.collapsed) {
+    return <CollapsedNamespaceCard data={data} selected={!!selected} />;
+  }
+
   // ── Legacy group rendering (non-swimlane) ───────────────────────────
   if (isGroup) {
     return (
@@ -408,6 +488,9 @@ function CustomNode({ data, selected }: NodeProps<CustomNodeType>) {
         <Handle type="target" position={Position.Top} className={styles.handle} id="top" />
         <Handle type="source" position={Position.Bottom} className={styles.handle} id="bottom" />
         <div className={styles.groupHeader}>
+          {type === 'namespace' && (
+            <CollapseToggle name={name} collapsed={false} onToggle={data.onToggleCollapse} />
+          )}
           <span className={`${styles.healthDot} ${styles[`health_${health}`]}`} />
           <div className={styles.iconWrapper}>
             <NodeIcon type={type} />

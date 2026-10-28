@@ -208,12 +208,13 @@ Config (YAML) ──→ YAML Merge ───────────▶│
 - **Adapters**: Implement the `Adapter` interface to probe databases and storage services
 - **Registry**: Manages adapters and topology sets, creates service-level parent nodes, aggregates graph data
 - **Cache**: 30-second TTL with singleflight pattern to prevent thundering herd
-- **WebSocket**: Streams health updates every 5 seconds
+- **WebSocket**: Streams health changes every 5 seconds, batched into one message
 
 ### Frontend (React + TypeScript)
 
 - **Swimlane Layout**: Namespace-aware layout with zone classification (system, infra, application namespaces)
-- **Group Containers**: K8s namespaces render as collapsible bounding boxes via React Flow grouping
+- **Group Containers**: K8s namespaces render as bounding boxes via React Flow grouping
+- **Large clusters**: past 300 nodes, namespaces start collapsed into summary nodes (pod/workload counts, worst health) and other layouts switch to Swimlane. Namespaces can be hidden, isolated, collapsed or expanded from the header's Namespaces menu, and nodes filtered by name, type, health and source. All of it lives in the URL (`?hide=`, `?collapse=`, `?q=` …), so a filtered view can be shared
 - **Node Inspector**: Side panel showing detailed metadata and connections
 - **WebSocket Hook**: Real-time health updates without polling
 
@@ -346,13 +347,15 @@ Returns adapter health status (ok/degraded/error).
 ### WS `/websocket`
 Streams real-time updates. Two message types are emitted, both wrapped as `{ "type": "...", "payload": { ... } }`. There is no `timestamp` field — clients infer ordering by arrival.
 
-**`health_update`** — sent for every node once per sweep (every 5s). Adapter-owned nodes get health via the adapter lookup; topology nodes (e.g. Kubernetes resources) carry health directly on the node.
+**`health_batch`** — sent every 5s with the nodes whose health changed since the previous tick (the first two ticks after connecting, and the tick after a `graph_update`, carry every node so a batch the client couldn't apply yet is corrected). Ticks with no changes send nothing. Adapter-owned nodes get health via the adapter lookup; topology nodes (e.g. Kubernetes resources) carry health directly on the node.
 ```json
 {
-  "type": "health_update",
+  "type": "health_batch",
   "payload": {
-    "nodeId": "service-postgres",
-    "health": "healthy"
+    "updates": [
+      { "nodeId": "service-postgres", "health": "healthy" },
+      { "nodeId": "k8s-shop-pod-api-7d9f", "health": "unhealthy" }
+    ]
   }
 }
 ```

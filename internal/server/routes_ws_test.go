@@ -33,17 +33,23 @@ func dialTestWebSocket(t *testing.T, s *Server) (*websocket.Conn, func()) {
 	return conn, func() { conn.CloseNow(); cancel(); srv.Close() }
 }
 
-// healthMsg is the structure sent over the WebSocket.
+// wsEnvelope is the structure sent over the WebSocket.
+type wsEnvelope struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+// healthMsg is one node's health, flattened out of a health_batch message.
 type healthMsg struct {
-	Type    string `json:"type"`
+	Type    string
 	Payload struct {
 		NodeID string `json:"nodeId"`
 		Health string `json:"health"`
-	} `json:"payload"`
+	}
 }
 
 // readAllMessages reads WebSocket messages until the context deadline is
-// reached. It collects and returns all successfully read messages.
+// reached, flattening each health_batch into one healthMsg per update.
 func readAllMessages(t *testing.T, conn *websocket.Conn, timeout time.Duration) []healthMsg {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -55,11 +61,30 @@ func readAllMessages(t *testing.T, conn *websocket.Conn, timeout time.Duration) 
 		if err != nil {
 			break
 		}
-		var m healthMsg
-		if err := json.Unmarshal(data, &m); err != nil {
+		var env wsEnvelope
+		if err := json.Unmarshal(data, &env); err != nil {
 			t.Fatalf("unmarshal ws message: %v", err)
 		}
-		msgs = append(msgs, m)
+		if env.Type != "health_batch" {
+			msgs = append(msgs, healthMsg{Type: env.Type})
+			continue
+		}
+		var batch struct {
+			Updates []struct {
+				NodeID string `json:"nodeId"`
+				Health string `json:"health"`
+			} `json:"updates"`
+		}
+		if err := json.Unmarshal(env.Payload, &batch); err != nil {
+			t.Fatalf("unmarshal health_batch: %v", err)
+		}
+		for _, u := range batch.Updates {
+			var m healthMsg
+			m.Type = env.Type
+			m.Payload.NodeID = u.NodeID
+			m.Payload.Health = u.Health
+			msgs = append(msgs, m)
+		}
 	}
 	return msgs
 }
@@ -82,12 +107,12 @@ func TestWebSocket_HealthUpdates(t *testing.T) {
 	msgs := readAllMessages(t, conn, 2*time.Second)
 
 	if len(msgs) == 0 {
-		t.Fatal("expected at least one health_update message")
+		t.Fatal("expected at least one health update")
 	}
 
 	found := false
 	for _, m := range msgs {
-		if m.Type != "health_update" {
+		if m.Type != "health_batch" {
 			t.Errorf("unexpected message type %q", m.Type)
 		}
 		if m.Payload.NodeID == "service-pg" && m.Payload.Health == "healthy" {
@@ -95,7 +120,42 @@ func TestWebSocket_HealthUpdates(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("did not find health_update for service-pg with health=healthy; got %+v", msgs)
+		t.Errorf("did not find health update for service-pg with health=healthy; got %+v", msgs)
+	}
+}
+
+func TestNodeHealths_OnlyChangesAreResent(t *testing.T) {
+	g := &graph.Graph{Nodes: []nodes.Node{
+		{Id: "pod-a", Health: "healthy"},
+		{Id: "pod-b", Health: "healthy"},
+		{Id: "no-health"},
+	}}
+	first := nodeHealths(g, nil)
+	if len(first) != 2 {
+		t.Fatalf("expected 2 nodes with health, got %v", first)
+	}
+	g.Nodes[1].Health = "unhealthy"
+	second := nodeHealths(g, nil)
+	var changed []string
+	for id, h := range second {
+		if first[id] != h {
+			changed = append(changed, id)
+		}
+	}
+	if len(changed) != 1 || changed[0] != "pod-b" {
+		t.Errorf("expected only pod-b to change, got %v", changed)
+	}
+}
+
+func TestNodeSetFingerprint(t *testing.T) {
+	a := &graph.Graph{Nodes: []nodes.Node{{Id: "x"}, {Id: "y"}}}
+	b := &graph.Graph{Nodes: []nodes.Node{{Id: "y"}, {Id: "x"}}}
+	c := &graph.Graph{Nodes: []nodes.Node{{Id: "x"}}}
+	if nodeSetFingerprint(a) != nodeSetFingerprint(b) {
+		t.Error("fingerprint should not depend on node order")
+	}
+	if nodeSetFingerprint(a) == nodeSetFingerprint(c) {
+		t.Error("fingerprint should change when a node is removed")
 	}
 }
 
@@ -232,4 +292,27 @@ func TestWebSocket_ClientClose(t *testing.T) {
 	// If the handler leaks a goroutine this test will eventually be
 	// caught by the race detector or -count flag. Here we just verify
 	// the close doesn't panic.
+}
+
+func TestWebSocket_ResendsFullSnapshotAfterFirstTick(t *testing.T) {
+	reg := &mockRegistry{
+		graph: &graph.Graph{
+			Nodes: []nodes.Node{{Id: "pod-a", Health: "healthy"}},
+		},
+	}
+	s := newTestServer(reg)
+	conn, cleanup := dialTestWebSocket(t, s)
+	defer cleanup()
+
+	// Ticks are 5s apart: the first tick and the full resend on the second.
+	msgs := readAllMessages(t, conn, 7*time.Second)
+	count := 0
+	for _, m := range msgs {
+		if m.Payload.NodeID == "pod-a" {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("expected pod-a health on the first tick and again on the resend, got %d", count)
+	}
 }

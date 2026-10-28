@@ -3,7 +3,7 @@ export {
   useGraph,
   useNode,
   useHealth,
-  useUpdateNodeHealth,
+  useApplyHealthBatch,
   useNodeFromGraph,
   queryKeys,
 } from './hooks';

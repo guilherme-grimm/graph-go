@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useUpdateNodeHealth, queryKeys } from '../api';
-import type { WebSocketMessage, HealthUpdatePayload } from '../types';
+import { useApplyHealthBatch, queryKeys } from '../api';
+import type { WebSocketMessage, HealthBatchPayload } from '../types';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -16,7 +16,7 @@ export function useWebSocket() {
   const isDisconnectingRef = useRef(false);
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
 
-  const updateNodeHealth = useUpdateNodeHealth();
+  const applyHealthBatch = useApplyHealthBatch();
   const queryClient = useQueryClient();
 
   const handleMessage = useCallback(
@@ -25,9 +25,9 @@ export function useWebSocket() {
         const message: WebSocketMessage = JSON.parse(event.data);
 
         switch (message.type) {
-          case 'health_update': {
-            const payload = message.payload as HealthUpdatePayload;
-            updateNodeHealth(payload.nodeId, payload.health);
+          case 'health_batch': {
+            const payload = message.payload as HealthBatchPayload;
+            applyHealthBatch(payload.updates ?? []);
             break;
           }
           case 'node_update':
@@ -39,7 +39,7 @@ export function useWebSocket() {
         console.error('Failed to parse WebSocket message:', err);
       }
     },
-    [updateNodeHealth, queryClient]
+    [applyHealthBatch, queryClient]
   );
 
   const connect = useCallback(() => {

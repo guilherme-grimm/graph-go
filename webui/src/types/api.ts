@@ -16,13 +16,18 @@ export interface HealthResponse {
 }
 
 export interface WebSocketMessage {
-  type: 'health_update' | 'node_update' | 'graph_update';
+  type: 'health_batch' | 'node_update' | 'graph_update';
   payload: unknown;
 }
 
 export interface HealthUpdatePayload {
   nodeId: string;
   health: GraphNode['health'];
+}
+
+// The server sends only nodes whose health changed since its last tick.
+export interface HealthBatchPayload {
+  updates: HealthUpdatePayload[];
 }
 
 export interface NodeUpdatePayload {

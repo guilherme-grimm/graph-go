@@ -25,6 +25,7 @@ type mockRegistry struct {
 func (m *mockRegistry) Register(string, string, adapters.Adapter, adapters.ConnectionConfig) error {
 	return nil
 }
+func (m *mockRegistry) Unregister(string) error                        { return nil }
 func (m *mockRegistry) Get(string) (adapters.Adapter, bool)            { return nil, false }
 func (m *mockRegistry) Names() []string                                { return nil }
 func (m *mockRegistry) DiscoverAll() (*graph.Graph, error)             { return m.graph, m.discErr }

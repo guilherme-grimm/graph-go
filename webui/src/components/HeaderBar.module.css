@@ -8,6 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
   padding: 0 var(--space-5);
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-default);
@@ -23,6 +24,7 @@
   color: var(--text-primary);
   letter-spacing: -0.02em;
   flex-shrink: 0;
+  margin-right: var(--space-2);
 }
 
 .wsIndicator {
@@ -60,13 +62,15 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
+  height: 32px;
+  padding: 0 var(--space-3);
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast);
-  min-width: 240px;
+  min-width: 180px;
+  flex-shrink: 0;
 }
 
 .searchTrigger:hover {
@@ -86,6 +90,7 @@
   color: var(--text-muted);
   flex: 1;
   text-align: left;
+  white-space: nowrap;
 }
 
 .searchKbd {
@@ -111,7 +116,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
+  height: 32px;
+  padding: 0 var(--space-3);
+  white-space: nowrap;
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   font-weight: 500;
@@ -171,6 +178,205 @@
   color: var(--accent-highlight);
 }
 
+/* Auto layout-switch notice */
+.layoutNotice {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 300px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  animation: dropdown-in 150ms var(--ease-out-expo);
+}
+
+.layoutNotice::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 24px;
+  width: 8px;
+  height: 8px;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border-accent);
+  border-top: 1px solid var(--border-accent);
+  transform: rotate(45deg);
+}
+
+.noticeDismiss {
+  flex-shrink: 0;
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.noticeDismiss:hover {
+  color: var(--text-primary);
+}
+
+.dropdownHint {
+  display: block;
+  font-size: var(--text-2xs);
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+/* Namespace menu */
+.nsMenu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.nsButtonActive {
+  border-color: var(--accent-highlight);
+  color: var(--accent-highlight);
+}
+
+.nsCount {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  padding: 0 6px;
+  background: var(--bg-interactive);
+  border-radius: var(--radius-full);
+}
+
+.nsPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  animation: dropdown-in 150ms var(--ease-out-expo);
+}
+
+.nsSearch,
+.nameFilter {
+  height: 32px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  outline: none;
+}
+
+.nsSearch:focus,
+.nameFilter:focus {
+  border-color: var(--border-accent);
+}
+
+.nameFilter {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.nsActions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.nsActions button,
+.nsRowAction {
+  padding: 2px 8px;
+  font-size: var(--text-2xs);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.nsActions button:hover:not(:disabled),
+.nsRowAction:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.nsActions button:disabled,
+.nsRowAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.nsList {
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.nsRow:hover {
+  background: var(--bg-surface);
+}
+
+.nsRowHidden .nsLabel span {
+  color: var(--text-dim);
+}
+
+.nsLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.nsLabel span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nsRowAction {
+  opacity: 0;
+}
+
+.nsRow:hover .nsRowAction,
+.nsRowAction:focus-visible {
+  opacity: 1;
+}
+
+.nsEmpty {
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
 /* Reset positions button */
 
 .resetButton {
@@ -212,7 +418,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  flex-shrink: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  margin-left: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border-default);
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -281,6 +492,8 @@
   align-items: center;
   gap: var(--space-3);
   flex-shrink: 0;
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border-default);
 }
 
 .healthBadge {
@@ -352,6 +565,10 @@
 @media (max-width: 640px) {
   .searchTrigger {
     min-width: auto;
+  }
+
+  .nameFilter {
+    display: none;
   }
 
   .searchLabel {

@@ -1,0 +1,8 @@
+# graph-go config for the scale-test cluster (see hack/scale/up.sh).
+# Paths are relative to the repo root, so run graph-go from there.
+docker:
+  enabled: false
+kubernetes:
+  enabled: true
+  kubeconfig: hack/scale/.kubeconfig
+connections: []

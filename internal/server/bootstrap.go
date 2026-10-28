@@ -14,8 +14,6 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
 	"github.com/guilherme-grimm/graph-go/internal/discovery/docker"
 	"github.com/guilherme-grimm/graph-go/internal/discovery/kubernetes"
-	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
-	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
 )
 
 // BuildRegistry constructs the adapter registry and the list of active
@@ -29,6 +27,13 @@ import (
 //
 // It does NOT start Watch() loops — that's NewServer's job.
 func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (adapters.Registry, []discovery.Discoverer, func()) {
+	reg, discoverers, _, cleanup := buildRegistry(cfg, logger, cat)
+	return reg, discoverers, cleanup
+}
+
+// buildRegistry is BuildRegistry plus the serviceSync that later discoverer
+// refreshes must reuse, so they can tell unchanged services from removed ones.
+func buildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (adapters.Registry, []discovery.Discoverer, *serviceSync, func()) {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -56,9 +61,8 @@ func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.C
 			Config: entry.ToConnectionConfig(),
 		}
 	}
-	services = discovery.MergeWithYAML(services, yamlEntries)
-
-	applyServices(reg, cat, services, logger)
+	svcSync := newServiceSync(reg, cat, yamlEntries, logger)
+	svcSync.apply(services, "")
 
 	cleanup := func() {
 		for _, d := range discoverers {
@@ -71,48 +75,7 @@ func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.C
 		}
 	}
 
-	return reg, discoverers, cleanup
-}
-
-// applyServices splits ServiceInfo entries into topology (ones carrying
-// pre-built Nodes, like Kubernetes resources) and adapter-bound ones, then
-// pushes each into the registry appropriately. Topology entries are grouped
-// by Source so a later refresh can replace them atomically.
-func applyServices(reg adapters.Registry, cat adapters.Catalog, services []discovery.ServiceInfo, logger *zap.SugaredLogger) {
-	topologyBySource := make(map[string]*struct {
-		nodes []nodes.Node
-		edges []edges.Edge
-	})
-	for _, svc := range services {
-		if len(svc.Nodes) > 0 || len(svc.Edges) > 0 {
-			bucket, ok := topologyBySource[svc.Source]
-			if !ok {
-				bucket = &struct {
-					nodes []nodes.Node
-					edges []edges.Edge
-				}{}
-				topologyBySource[svc.Source] = bucket
-			}
-			bucket.nodes = append(bucket.nodes, svc.Nodes...)
-			bucket.edges = append(bucket.edges, svc.Edges...)
-			continue
-		}
-
-		adapter, err := cat.New(svc.Type, logger)
-		if err != nil {
-			logger.Warnw("skipping service: unknown adapter type", "service", svc.Name, "type", svc.Type, "err", err)
-			continue
-		}
-		if err := reg.Register(svc.Name, svc.Type, adapter, svc.Config); err != nil {
-			logger.Warnw("adapter register failed", "service", svc.Name, "type", svc.Type, "err", err)
-		} else {
-			logger.Infow("adapter registered", "service", svc.Name, "type", svc.Type)
-		}
-	}
-	for source, bucket := range topologyBySource {
-		reg.SetTopology(source, bucket.nodes, bucket.edges)
-		logger.Infow("topology applied", "source", source, "nodes", len(bucket.nodes), "edges", len(bucket.edges))
-	}
+	return reg, discoverers, svcSync, cleanup
 }
 
 // discoverAll runs Discover() on every discoverer in parallel and returns

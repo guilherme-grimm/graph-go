@@ -1,23 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { Graph, NodeType, HealthStatus } from '../types';
+import { activeFilterCount as countActiveFilters, nodeSource, type Filters, type NodeSource } from '../utils';
 import styles from './HeaderBar.module.css';
-
-export type NodeSource = 'docker' | 'kubernetes';
-
-export interface Filters {
-  types: NodeType[];
-  health: HealthStatus[];
-  sources: NodeSource[];
-}
-
-// K8s node types — used to infer source from node type.
-export const K8S_TYPES: ReadonlySet<NodeType> = new Set<NodeType>([
-  'namespace', 'deployment', 'statefulset', 'daemonset', 'pod', 'k8s_service',
-]);
-
-export function nodeSource(type: NodeType): NodeSource {
-  return K8S_TYPES.has(type) ? 'kubernetes' : 'docker';
-}
 
 export type LayoutMode = 'hierarchical' | 'force' | 'swimlane';
 
@@ -33,6 +17,15 @@ interface HeaderBarProps {
   onLayoutChange: (mode: LayoutMode) => void;
   onResetPositions: () => void;
   wsStatus?: ConnectionStatus;
+  // Namespace controls
+  namespaces: string[];
+  isCollapsed: (name: string) => boolean;
+  onToggleCollapse: (name: string) => void;
+  onCollapseAll: (collapsed: boolean) => void;
+  // Set when the layout was switched automatically because the graph is large.
+  layoutNotice?: { from: LayoutMode; nodeCount: number } | null;
+  onDismissLayoutNotice: () => void;
+  isLargeGraph: boolean;
 }
 
 const nodeTypes: NodeType[] = [
@@ -64,15 +57,28 @@ const LAYOUT_LABELS: Record<LayoutMode, string> = {
   force: 'Force-Directed',
 };
 
-export default function HeaderBar({ graph, filteredGraph, onSearchOpen, filters, onFilterChange, layoutMode, onLayoutChange, onResetPositions, wsStatus }: HeaderBarProps) {
+export default function HeaderBar({
+  graph, filteredGraph, onSearchOpen, filters, onFilterChange, layoutMode, onLayoutChange, onResetPositions, wsStatus,
+  namespaces, isCollapsed, onToggleCollapse, onCollapseAll, layoutNotice, onDismissLayoutNotice, isLargeGraph,
+}: HeaderBarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [nsMenuOpen, setNsMenuOpen] = useState(false);
+  const [nsQuery, setNsQuery] = useState('');
+  const [query, setQuery] = useState(filters.query);
+  // Follow external changes (e.g. "clear filters") into the input.
+  const [syncedQuery, setSyncedQuery] = useState(filters.query);
+  if (filters.query !== syncedQuery) {
+    setSyncedQuery(filters.query);
+    setQuery(filters.query);
+  }
   const dropdownRef = useRef<HTMLDivElement>(null);
   const mobileFilterRef = useRef<HTMLDivElement>(null);
+  const nsMenuRef = useRef<HTMLDivElement>(null);
 
   // Click outside to close dropdown
   useEffect(() => {
-    if (!dropdownOpen && !mobileFiltersOpen) return;
+    if (!dropdownOpen && !mobileFiltersOpen && !nsMenuOpen) return;
 
     function handleClickOutside(event: MouseEvent) {
       if (dropdownOpen && dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -81,18 +87,47 @@ export default function HeaderBar({ graph, filteredGraph, onSearchOpen, filters,
       if (mobileFiltersOpen && mobileFilterRef.current && !mobileFilterRef.current.contains(event.target as Node)) {
         setMobileFiltersOpen(false);
       }
+      if (nsMenuOpen && nsMenuRef.current && !nsMenuRef.current.contains(event.target as Node)) {
+        setNsMenuOpen(false);
+      }
     }
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [dropdownOpen, mobileFiltersOpen]);
+    // Capture phase: React Flow's pane stops mousedown from bubbling, so a
+    // bubbling listener never saw clicks on the canvas.
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => document.removeEventListener('mousedown', handleClickOutside, true);
+  }, [dropdownOpen, mobileFiltersOpen, nsMenuOpen]);
+
+  // Debounce the name filter so typing doesn't re-layout on every keystroke.
+  useEffect(() => {
+    if (query === filters.query) return;
+    const t = setTimeout(() => onFilterChange({ ...filters, query }), 200);
+    return () => clearTimeout(t);
+  }, [query, filters, onFilterChange]);
+
+  const hiddenNs = useMemo(() => new Set(filters.hiddenNamespaces), [filters.hiddenNamespaces]);
+  const visibleNsList = useMemo(() => {
+    const q = nsQuery.trim().toLowerCase();
+    return q ? namespaces.filter(n => n.toLowerCase().includes(q)) : namespaces;
+  }, [namespaces, nsQuery]);
+
+  const toggleNamespaceHidden = (name: string) => {
+    const hiddenNamespaces = hiddenNs.has(name)
+      ? filters.hiddenNamespaces.filter(n => n !== name)
+      : [...filters.hiddenNamespaces, name];
+    onFilterChange({ ...filters, hiddenNamespaces });
+  };
+
+  const setOnlyNamespace = (name: string) => {
+    onFilterChange({ ...filters, hiddenNamespaces: namespaces.filter(n => n !== name) });
+  };
 
   const graphHasNamespaces = useMemo(() => {
     return graph?.nodes?.some(n => n.type === 'namespace') ?? false;
   }, [graph]);
 
-  const hasActiveFilters = filters.types.length > 0 || filters.health.length > 0 || filters.sources.length > 0;
-  const activeFilterCount = filters.types.length + filters.health.length + filters.sources.length;
+  const activeFilterCount = countActiveFilters(filters);
+  const hasActiveFilters = activeFilterCount > 0;
 
   const healthCounts = useMemo(() => {
     const sourceGraph = hasActiveFilters && filteredGraph ? filteredGraph : graph;
@@ -214,6 +249,17 @@ export default function HeaderBar({ graph, filteredGraph, onSearchOpen, filters,
             <path d="M6 9l6 6 6-6" />
           </svg>
         </button>
+        {layoutNotice && !dropdownOpen && (
+          <div className={styles.layoutNotice} role="status">
+            <span>
+              Switched to Swimlane: {layoutNotice.nodeCount.toLocaleString()} nodes is too many
+              for {LAYOUT_LABELS[layoutNotice.from]} to stay readable. You can switch back here.
+            </span>
+            <button className={styles.noticeDismiss} onClick={onDismissLayoutNotice} aria-label="Dismiss">
+              ×
+            </button>
+          </div>
+        )}
         {dropdownOpen && (
           <div className={styles.dropdown} role="listbox">
             {graphHasNamespaces && (
@@ -239,6 +285,7 @@ export default function HeaderBar({ graph, filteredGraph, onSearchOpen, filters,
               }}
             >
               Hierarchical (Top-Down)
+              {isLargeGraph && <span className={styles.dropdownHint}>slow at this size</span>}
             </button>
             <button
               role="option"
@@ -250,10 +297,84 @@ export default function HeaderBar({ graph, filteredGraph, onSearchOpen, filters,
               }}
             >
               Force-Directed (Organic)
+              {isLargeGraph && <span className={styles.dropdownHint}>slow at this size</span>}
             </button>
           </div>
         )}
       </div>
+
+      {namespaces.length > 0 && (
+        <div className={styles.nsMenu} ref={nsMenuRef}>
+          <button
+            className={`${styles.layoutButton} ${hiddenNs.size > 0 ? styles.nsButtonActive : ''}`}
+            onClick={() => setNsMenuOpen(!nsMenuOpen)}
+            aria-haspopup="dialog"
+            aria-expanded={nsMenuOpen}
+          >
+            Namespaces
+            <span className={styles.nsCount}>
+              {hiddenNs.size > 0 ? `${namespaces.length - hiddenNs.size}/${namespaces.length}` : namespaces.length}
+            </span>
+            <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {nsMenuOpen && (
+            <div className={styles.nsPanel} role="dialog" aria-label="Namespaces">
+              <input
+                className={styles.nsSearch}
+                placeholder="Find namespace..."
+                value={nsQuery}
+                onChange={e => setNsQuery(e.target.value)}
+                autoFocus
+              />
+              <div className={styles.nsActions}>
+                <button onClick={() => onCollapseAll(true)}>Collapse all</button>
+                <button onClick={() => onCollapseAll(false)}>Expand all</button>
+                <button onClick={() => onFilterChange({ ...filters, hiddenNamespaces: [] })} disabled={hiddenNs.size === 0}>
+                  Show all
+                </button>
+              </div>
+              <ul className={styles.nsList}>
+                {visibleNsList.map(name => {
+                  const shown = !hiddenNs.has(name);
+                  const collapsed = isCollapsed(name);
+                  return (
+                    <li key={name} className={`${styles.nsRow} ${shown ? '' : styles.nsRowHidden}`}>
+                      <label className={styles.nsLabel}>
+                        <input type="checkbox" checked={shown} onChange={() => toggleNamespaceHidden(name)} />
+                        <span title={name}>{name}</span>
+                      </label>
+                      <button className={styles.nsRowAction} onClick={() => setOnlyNamespace(name)} title="Show only this namespace">
+                        only
+                      </button>
+                      <button
+                        className={styles.nsRowAction}
+                        onClick={() => onToggleCollapse(name)}
+                        disabled={!shown}
+                        aria-pressed={collapsed}
+                        title={collapsed ? 'Expand' : 'Collapse'}
+                      >
+                        {collapsed ? 'expand' : 'collapse'}
+                      </button>
+                    </li>
+                  );
+                })}
+                {visibleNsList.length === 0 && <li className={styles.nsEmpty}>No match</li>}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <input
+        className={styles.nameFilter}
+        type="search"
+        placeholder="Filter by name"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        aria-label="Filter nodes by name"
+      />
 
       <button
         className={styles.resetButton}

@@ -52,7 +52,15 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # Prereleases (v0.4.0-rc.1) must not move :latest.
+          if [[ "$tag" == *-* ]]; then
+            echo "latest=" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest=ghcr.io/${{ github.repository }}:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compute build date
         id: build_date
@@ -76,4 +84,4 @@ jobs:
             BUILD_DATE=${{ steps.build_date.outputs.value }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ steps.version.outputs.latest }}

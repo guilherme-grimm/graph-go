@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './client';
-import type { Graph, HealthStatus } from '../types';
+import type { Graph, HealthUpdatePayload } from '../types';
 
 // Query keys for cache management
 export const queryKeys = {
@@ -45,21 +45,27 @@ export function useHealth() {
   });
 }
 
-// Hook to update node health in cache (used by WebSocket)
-export function useUpdateNodeHealth() {
+// Hook to apply a batch of node health changes to the cached graph (used by
+// WebSocket). One cache write per batch, so a tick touching thousands of
+// nodes costs one re-render instead of thousands.
+export function useApplyHealthBatch() {
   const queryClient = useQueryClient();
 
   return useCallback(
-    (nodeId: string, health: HealthStatus) => {
+    (updates: HealthUpdatePayload[]) => {
+      if (updates.length === 0) return;
       queryClient.setQueryData<Graph>(queryKeys.graph, (oldData) => {
         if (!oldData?.nodes) return oldData;
 
-        return {
-          ...oldData,
-          nodes: oldData.nodes.map((node) =>
-            node.id === nodeId ? { ...node, health } : node
-          ),
-        };
+        const next = new Map(updates.map(u => [u.nodeId, u.health]));
+        let changed = false;
+        const nodes = oldData.nodes.map((node) => {
+          const health = next.get(node.id);
+          if (health === undefined || health === node.health) return node;
+          changed = true;
+          return { ...node, health };
+        });
+        return changed ? { ...oldData, nodes } : oldData;
       });
     },
     [queryClient]
