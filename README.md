@@ -347,7 +347,7 @@ Returns adapter health status (ok/degraded/error).
 ### WS `/websocket`
 Streams real-time updates. Two message types are emitted, both wrapped as `{ "type": "...", "payload": { ... } }`. There is no `timestamp` field — clients infer ordering by arrival.
 
-**`health_batch`** — sent every 5s with the nodes whose health changed since the previous tick (the first tick after connecting carries every node). Ticks with no changes send nothing. Adapter-owned nodes get health via the adapter lookup; topology nodes (e.g. Kubernetes resources) carry health directly on the node.
+**`health_batch`** — sent every 5s with the nodes whose health changed since the previous tick (the first two ticks after connecting, and the tick after a `graph_update`, carry every node so a batch the client couldn't apply yet is corrected). Ticks with no changes send nothing. Adapter-owned nodes get health via the adapter lookup; topology nodes (e.g. Kubernetes resources) carry health directly on the node.
 ```json
 {
   "type": "health_batch",

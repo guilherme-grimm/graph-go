@@ -172,7 +172,7 @@ Kubernetes-discovered (topology):
 3. `Watch` callback (`buildOnChange`): topology-producing discoverers re-read their snapshot and `SetTopology`; adapter-oriented discoverers re-sync through `serviceSync` (`internal/server/sync.go`), which merges YAML overrides, skips services whose type+config are unchanged, (re)registers the rest in parallel, and unregisters services from that source that disappeared (stale-node pruning). YAML-only connections are never pruned.
 4. `DiscoverAll`: cache check (RLock) → singleflight → double-check → snapshot adapters (RLock, release before I/O) → sequential `adapter.Discover()` per adapter → synthesize service nodes + re-parent children → merge topology → cache + return shallow copy.
 5. HTTP routes: `GET /api/graph` (full graph), `GET /api/node/{id}`, `GET /api/health` (adapter health), `WS /websocket` (live updates), `GET /health` (liveness), SPA fallback for the embedded UI.
-6. WebSocket: emits `health_batch` (every 5s, only nodes whose health changed since the last tick for that connection; nothing when nothing changed) and `graph_update` (when the node-ID set changes; payload empty → client re-fetches `/api/graph`). Messages wrapped as `{ "type", "payload" }`; no timestamp field.
+6. WebSocket: emits `health_batch` (every 5s, only nodes whose health changed since the last tick for that connection, plus a full snapshot on the second tick and after a `graph_update`; nothing when nothing changed) and `graph_update` (when the node-ID set changes; payload empty → client re-fetches `/api/graph`). Messages wrapped as `{ "type", "payload" }`; no timestamp field.
 7. Graceful shutdown: signal → stop HTTP server → `cleanup()` (closes discoverers + `CloseAll` adapters).
 
 ---
