@@ -81,9 +81,9 @@ docker run -d -p 8080:8080 \
   ghcr.io/guilherme-grimm/graph-go:latest
 ```
 
-> The image runs as a non-root user, so `--group-add` grants it the socket's group (`stat -c` is Linux; on macOS start with `--group-add 0`). If Docker discovery still falls back to YAML-only, the startup log prints the exact `--group-add` value to use.
+> The image runs as a non-root user, so `--group-add` grants it the socket's group (`stat -c` is Linux; on macOS start with `--group-add 0`). If Docker discovery still falls back to YAML-only, the startup log says what to change (including the exact `--group-add` value when that is the fix).
 >
-> graph-go only reads from the Docker API (list, inspect, events). `:ro` does not restrict API calls, though: anything that can reach the socket can control the daemon, so only run graph-go where you would grant it that access.
+> graph-go only reads from the Docker API (list, inspect, events). `:ro` does not restrict API calls, though: anything that can reach the socket can control the daemon. For least privilege, put a read-only API proxy such as [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) in front of the socket and point graph-go at it with `DOCKER_HOST=tcp://<proxy>:2375` (no socket mount or `--group-add` needed). [`docker-compose.demo.yml`](docker-compose.demo.yml) shows a working setup.
 
 Open **http://localhost:8080**. Auto-discovery handles Docker containers and (when a kubeconfig or in-cluster service account is present) Kubernetes resources without any config file.
 

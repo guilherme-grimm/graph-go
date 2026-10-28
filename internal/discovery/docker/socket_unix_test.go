@@ -49,7 +49,8 @@ func TestNewDockerDiscovery_PermissionDeniedIsDetectable(t *testing.T) {
 	if !ok {
 		t.Fatal("SocketGID could not stat the socket")
 	}
-	if want := fmt.Sprintf("--group-add %d", gid); !strings.Contains(hint, want) {
+	// unreachableSocket is mode 0, so the hint must say group access won't help.
+	if want := fmt.Sprintf("group %d no read/write access", gid); !strings.Contains(hint, want) {
 		t.Errorf("hint %q does not contain %q", hint, want)
 	}
 }
@@ -66,7 +67,7 @@ func TestSocketAccessHint(t *testing.T) {
 	}{
 		{name: "nil error", socket: sock, err: nil, want: ""},
 		{name: "unrelated error", socket: sock, err: errors.New("connection refused"), want: ""},
-		{name: "permission with known gid", socket: sock, err: fs.ErrPermission, want: fmt.Sprintf("group_add: [\"%d\"]", gid)},
+		{name: "permission with known gid", socket: sock, err: fs.ErrPermission, want: fmt.Sprintf("group %d no read/write access", gid)},
 		{name: "permission with missing socket", socket: filepath.Join(t.TempDir(), "nope.sock"), err: fs.ErrPermission, want: "--group-add"},
 	}
 
@@ -81,6 +82,31 @@ func TestSocketAccessHint(t *testing.T) {
 			}
 			if !strings.Contains(got, tt.want) {
 				t.Errorf("hint %q does not contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSocketHint_GroupAccess(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    fs.FileMode
+		known   bool
+		want    string
+		notWant string
+	}{
+		{name: "group rw suggests group_add", mode: 0o660, known: true, want: `group_add: ["958"]`},
+		{name: "owner-only says group_add won't help", mode: 0o600, known: true, want: "will not help", notWant: "group_add"},
+		{name: "unknown ownership checks permissions", known: false, want: "check that the socket exists and its permissions"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := socketHint(1000, "/var/run/docker.sock", 958, tt.mode, tt.known)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("hint %q does not contain %q", got, tt.want)
+			}
+			if tt.notWant != "" && strings.Contains(got, tt.notWant) {
+				t.Errorf("hint %q should not contain %q", got, tt.notWant)
 			}
 		})
 	}

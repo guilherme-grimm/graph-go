@@ -1,21 +1,40 @@
 services:
+  # graph-go only reads the Docker API (ping, version, list/inspect containers,
+  # events). The proxy allows exactly that and answers 403 to everything else,
+  # so graph-go never holds the daemon-level control the raw socket grants
+  # (a `:ro` bind mount does not restrict API calls). It also runs as root
+  # inside its own container, so no host-specific socket gid is needed.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    environment:
+      CONTAINERS: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      graphgo.ignore: "true"
+    networks:
+      - graph-go
+
   graph-go:
     build:
       context: .
     ports:
       - "8080:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./conf/config.docker.yaml:/app/conf/config.yaml:ro
       - backend-data:/app/data
-    # The image runs as a non-root user; grant it the Docker socket's group.
-    # `graph-go demo` sets DOCKER_GID for you. With plain compose on Linux:
-    #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f docker-compose.demo.yml up
-    group_add:
-      - "${DOCKER_GID:-0}"
+    # Docker API through the read-only proxy below, never the raw socket.
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
     labels:
       graphgo.ignore: "true"
     depends_on:
+      docker-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       mongo:
@@ -168,16 +187,15 @@ services:
     ports:
       - "8081:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - backend-data:/app/data
-    # The image runs as a non-root user; grant it the Docker socket's group.
-    # `graph-go demo` sets DOCKER_GID for you. With plain compose on Linux:
-    #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f docker-compose.demo.yml up
-    group_add:
-      - "${DOCKER_GID:-0}"
+    # Docker API through the read-only proxy below, never the raw socket.
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
     labels:
       graphgo.ignore: "true"
     depends_on:
+      docker-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       mongo:

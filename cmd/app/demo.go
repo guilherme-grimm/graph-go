@@ -6,21 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/guilherme-grimm/graph-go/internal/discovery/docker"
 )
 
 const demoComposeFile = "docker-compose.demo.yml"
-
-// demoDockerSocket is the host path docker-compose.demo.yml bind-mounts into graph-go.
-const demoDockerSocket = "/var/run/docker.sock"
 
 var (
 	lookPath     = exec.LookPath
@@ -69,7 +62,6 @@ func runDemo(stdout, stderr io.Writer) error {
 
 	cmd := exec.Command("docker", "compose", "-f", composeFile, "up", "--build")
 	cmd.Dir = repoRoot
-	cmd.Env = demoEnv(os.Environ(), runtime.GOOS, docker.SocketGID)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -78,28 +70,6 @@ func runDemo(stdout, stderr io.Writer) error {
 	}
 
 	return nil
-}
-
-// demoEnv returns the environment for `docker compose up`, adding DOCKER_GID
-// unless the caller already set it. The graph-go image runs as a non-root
-// user, so the compose file grants it the socket's group via
-// group_add: ${DOCKER_GID}. On Linux that is the host socket's gid. Elsewhere
-// (Docker Desktop) the host path is a proxy whose gid means nothing inside the
-// VM, so fall back to 0; if that is still wrong, graph-go logs the exact gid
-// it needs at startup.
-func demoEnv(environ []string, goos string, socketGID func(string) (int, bool)) []string {
-	for _, kv := range environ {
-		if strings.HasPrefix(kv, "DOCKER_GID=") {
-			return environ
-		}
-	}
-	gid := 0
-	if goos == "linux" {
-		if g, ok := socketGID(demoDockerSocket); ok {
-			gid = g
-		}
-	}
-	return append(slices.Clip(environ), fmt.Sprintf("DOCKER_GID=%d", gid))
 }
 
 func findRepoRoot() (string, error) {

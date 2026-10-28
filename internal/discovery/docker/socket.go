@@ -18,9 +18,19 @@ func SocketAccessHint(socket string, err error) string {
 	if err == nil || !errors.Is(err, fs.ErrPermission) {
 		return ""
 	}
-	gid, ok := SocketGID(socket)
-	if !ok {
-		return fmt.Sprintf("uid %d cannot open %s: run the container with --group-add <gid of %s> (compose: group_add)", os.Getuid(), socket, socket)
+	gid, mode, ok := socketOwnership(socket)
+	return socketHint(os.Getuid(), socket, gid, mode, ok)
+}
+
+// socketHint words the hint for a process (uid) that could not open socket.
+// Group membership only helps when the socket grants its group read+write,
+// so a socket like 0600 gets different advice than the usual 0660.
+func socketHint(uid int, socket string, gid int, mode fs.FileMode, known bool) string {
+	if !known {
+		return fmt.Sprintf("uid %d cannot open %s: check that the socket exists and its permissions, then run the container with --group-add <gid of %s> (compose: group_add)", uid, socket, socket)
 	}
-	return fmt.Sprintf("uid %d is not in group %d, which owns %s: add --group-add %d to docker run, or group_add: [\"%d\"] in compose", os.Getuid(), gid, socket, gid, gid)
+	if mode&0o060 != 0o060 {
+		return fmt.Sprintf("uid %d cannot open %s: its mode %#o gives group %d no read/write access, so --group-add will not help; loosen the socket permissions or reach Docker through a socket proxy (DOCKER_HOST)", uid, socket, mode, gid)
+	}
+	return fmt.Sprintf("uid %d cannot open %s (group %d, mode %#o): if the process is not in that group, add --group-add %d to docker run, or group_add: [\"%d\"] in compose; otherwise check the socket's permissions", uid, socket, gid, mode, gid, gid)
 }
