@@ -163,6 +163,11 @@
   height: 16px !important;
 }
 
+/* Stroke-drawn icons (custom fit button) must not be filled. */
+.controls :global(button) .strokeIcon {
+  fill: none !important;
+}
+
 /* MiniMap */
 
 .minimap {

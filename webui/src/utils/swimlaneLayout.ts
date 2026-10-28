@@ -65,6 +65,10 @@ function classifyNamespace(name: string): Zone {
 
 const ZONE_ORDER: Record<Zone, number> = { system: 0, user: 1, infra: 2 };
 
+// Natural order, so app-2 sorts before app-10.
+const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const byName = (a: string, b: string) => nameCollator.compare(a, b);
+
 // ── Lane data structures ────────────────────────────────────────────────
 interface Lane {
   namespaceId: string;
@@ -142,6 +146,24 @@ export function calculateSwimlaneLayout(
     }
   }
 
+  // Each service sits on the row of the workload it routes the most pods
+  // to, so its edge is short and horizontal instead of crossing the lane.
+  const routedCounts = new Map<string, Map<string, number>>();
+  for (const edge of graph.edges) {
+    if (edge.type !== 'routes_to') continue;
+    const owner = podOwner.get(edge.target);
+    if (!owner) continue;
+    if (!routedCounts.has(edge.source)) routedCounts.set(edge.source, new Map());
+    const counts = routedCounts.get(edge.source)!;
+    counts.set(owner, (counts.get(owner) ?? 0) + 1);
+  }
+  const serviceWorkload = new Map<string, string>();
+  for (const [svc, counts] of routedCounts) {
+    let best: string | undefined;
+    for (const [w, n] of counts) if (best === undefined || n > counts.get(best)!) best = w;
+    if (best) serviceWorkload.set(svc, best);
+  }
+
   // Build sorted lanes.
   const lanes: Lane[] = [];
   for (const [nsId, children] of childrenByNs) {
@@ -164,8 +186,8 @@ export function calculateSwimlaneLayout(
     }
 
     // Sort workloads alphabetically.
-    workloads.sort((a, b) => a.name.localeCompare(b.name));
-    services.sort((a, b) => a.name.localeCompare(b.name));
+    workloads.sort((a, b) => byName(a.name, b.name));
+    services.sort((a, b) => byName(a.name, b.name));
 
     lanes.push({
       namespaceId: nsId,
@@ -182,7 +204,7 @@ export function calculateSwimlaneLayout(
     const zoneA = ZONE_ORDER[a.zone];
     const zoneB = ZONE_ORDER[b.zone];
     if (zoneA !== zoneB) return zoneA - zoneB;
-    return a.namespaceName.localeCompare(b.namespaceName);
+    return byName(a.namespaceName, b.namespaceName);
   });
 
   // ── Position nodes in lanes ───────────────────────────────────────────
@@ -227,8 +249,8 @@ export function calculateSwimlaneLayout(
         orphanPods.push(pod);
       }
     }
-    for (const pods of podsByOwner.values()) pods.sort((a, b) => a.name.localeCompare(b.name));
-    orphanPods.sort((a, b) => a.name.localeCompare(b.name));
+    for (const pods of podsByOwner.values()) pods.sort((a, b) => byName(a.name, b.name));
+    orphanPods.sort((a, b) => byName(a.name, b.name));
 
     // Column x offsets. Empty columns collapse.
     let colX = LANE_PAD_X;
@@ -238,13 +260,23 @@ export function calculateSwimlaneLayout(
     if (lane.workloads.length > 0) colX += NODE_W + COLUMN_GAP;
     const podColX = colX;
 
-    // Services stack on their own.
-    let serviceMaxY = contentStartY;
-    for (let i = 0; i < lane.services.length; i++) {
-      const y = contentStartY + i * (NODE_H_SERVICE + ROW_GAP);
-      positions.set(lane.services[i].id, { x: serviceColX, y });
-      serviceMaxY = y + NODE_H_SERVICE;
+    // Services grouped by the workload they front; the rest stack after
+    // the workload rows.
+    const servicesByWorkload = new Map<string, GraphNode[]>();
+    const looseServices: GraphNode[] = [];
+    for (const svc of lane.services) {
+      const w = serviceWorkload.get(svc.id);
+      if (w && workloadIds.has(w)) {
+        if (!servicesByWorkload.has(w)) servicesByWorkload.set(w, []);
+        servicesByWorkload.get(w)!.push(svc);
+      } else {
+        looseServices.push(svc);
+      }
     }
+    const placeServices = (svcs: GraphNode[], y: number): number => {
+      svcs.forEach((svc, i) => positions.set(svc.id, { x: serviceColX, y: y + i * (NODE_H_SERVICE + ROW_GAP) }));
+      return svcs.length === 0 ? 0 : svcs.length * NODE_H_SERVICE + (svcs.length - 1) * ROW_GAP;
+    };
 
     // Lay out a run of pods as a grid starting at (podColX, y); returns the
     // height used.
@@ -260,19 +292,20 @@ export function calculateSwimlaneLayout(
       return rows === 0 ? 0 : rows * NODE_H_POD + (rows - 1) * ROW_GAP;
     };
 
-    // One row per workload, tall enough for its wrapped pods.
+    // One row per workload: its services, itself, then its wrapped pods.
     let rowY = contentStartY;
     for (const w of lane.workloads) {
       positions.set(w.id, { x: workloadColX, y: rowY });
       const podsH = placePods(podsByOwner.get(w.id) ?? [], rowY);
-      rowY += Math.max(NODE_H_WORKLOAD, podsH) + ROW_GAP;
+      const svcH = placeServices(servicesByWorkload.get(w.id) ?? [], rowY);
+      rowY += Math.max(NODE_H_WORKLOAD, podsH, svcH) + ROW_GAP;
     }
-    if (orphanPods.length > 0) {
-      rowY += placePods(orphanPods, rowY) + ROW_GAP;
+    if (orphanPods.length > 0 || looseServices.length > 0) {
+      const podsH = placePods(orphanPods, rowY);
+      const svcH = placeServices(looseServices, rowY);
+      rowY += Math.max(podsH, svcH) + ROW_GAP;
     }
-    const rowsMaxY = rowY > contentStartY ? rowY - ROW_GAP : contentStartY;
-
-    const contentMaxY = Math.max(serviceMaxY, rowsMaxY);
+    const contentMaxY = rowY > contentStartY ? rowY - ROW_GAP : contentStartY;
     const laneH = hasContent
       ? (contentMaxY - laneStartY) + LANE_PAD_Y
       : LANE_HEADER_H + LANE_PAD_Y;

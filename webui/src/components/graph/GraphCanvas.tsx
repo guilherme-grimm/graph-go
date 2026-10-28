@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  ControlButton,
   MiniMap,
   useNodesState,
   useEdgesState,
@@ -48,6 +49,8 @@ interface GraphCanvasProps {
   // collapsed rendering.
   namespaces?: Map<string, NamespaceSummary>;
   onToggleCollapse?: (namespaceName: string) => void;
+  // Changing this refits the viewport (e.g. a new filter); see the fit effect.
+  fitKey?: string;
 }
 
 // Never zoom past 1:1 when fitting, so a handful of nodes (e.g. one
@@ -132,6 +135,37 @@ function edgeCounts(edges: GraphEdge[]) {
   return { degree, routesTo };
 }
 
+const SWIM_WORKLOAD_TYPES = new Set(['deployment', 'statefulset', 'daemonset']);
+
+// Swimlane already encodes containment spatially (lane = namespace, row =
+// workload + its pods), so `contains` edges only add noise, and a service's
+// routes_to fan-out to every pod becomes one edge to the owning workload.
+// Pods without an owning workload keep their direct edge.
+function simplifySwimlaneEdges(edges: GraphEdge[], nodeById: Map<string, Graph['nodes'][number]>): GraphEdge[] {
+  const podOwner = new Map<string, string>();
+  for (const e of edges) {
+    if (e.type !== 'contains') continue;
+    if (nodeById.get(e.target)?.type === 'pod' && SWIM_WORKLOAD_TYPES.has(nodeById.get(e.source)?.type ?? '')) {
+      podOwner.set(e.target, e.source);
+    }
+  }
+  const out: GraphEdge[] = [];
+  const seen = new Set<string>();
+  for (const e of edges) {
+    if (e.type === 'contains') continue;
+    const owner = e.type === 'routes_to' ? podOwner.get(e.target) : undefined;
+    if (!owner) {
+      out.push(e);
+      continue;
+    }
+    const id = `swim:${e.source}->${owner}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, source: e.source, target: owner, type: 'routes_to' });
+  }
+  return out;
+}
+
 function computeLayout(
   graph: Graph,
   layoutMode: LayoutMode,
@@ -142,6 +176,9 @@ function computeLayout(
 ): {
   nodes: Node<CustomNodeData>[];
   edges: Edge<CustomEdgeData>[];
+  // Every edge, for layouts that render a simplified set: the selected
+  // node's real edges are shown on top of the simplified ones.
+  detailEdges?: Edge<CustomEdgeData>[];
 } {
   const isSwimLane = layoutMode === 'swimlane';
   const { degree, routesTo } = edgeCounts(graph.edges);
@@ -231,7 +268,7 @@ function computeLayout(
       return ag - bg;
     });
 
-    const edges: Edge<CustomEdgeData>[] = graph.edges.map(edge => {
+    const toFlowEdge = (edge: GraphEdge): Edge<CustomEdgeData> => {
       const sourceNs = nodeNsMap.get(edge.source);
       const targetNs = nodeNsMap.get(edge.target);
       const isCrossNamespace = sourceNs !== targetNs && sourceNs !== undefined && targetNs !== undefined;
@@ -248,9 +285,12 @@ function computeLayout(
           isCrossNamespace,
         },
       };
-    });
+    };
+    const nodeById = new Map(graph.nodes.map(n => [n.id, n]));
+    const edges = simplifySwimlaneEdges(graph.edges, nodeById).map(toFlowEdge);
+    const detailEdges = graph.edges.map(toFlowEdge);
 
-    return { nodes, edges };
+    return { nodes, edges, detailEdges };
   }
 
   // ── Hierarchical / Force layout (existing) ──────────────────────────
@@ -381,7 +421,8 @@ function applyHighlighting(
   layoutNodes: Node<CustomNodeData>[],
   layoutEdges: Edge<CustomEdgeData>[],
   selectedNodeId: string | null,
-  graphEdges: GraphEdge[]
+  graphEdges: GraphEdge[],
+  detailEdges: Edge<CustomEdgeData>[] | undefined,
 ): {
   nodes: Node<CustomNodeData>[];
   edges: Edge<CustomEdgeData>[];
@@ -404,13 +445,14 @@ function applyHighlighting(
     };
   });
 
-  const edges = layoutEdges.map(edge => ({
+  const shown = new Set(layoutEdges.map(e => e.id));
+  const touching = (e: Edge<CustomEdgeData>) => e.source === selectedNodeId || e.target === selectedNodeId;
+  const extra = (detailEdges ?? []).filter(e => !shown.has(e.id) && touching(e));
+  const edges = [...layoutEdges, ...extra].map(edge => ({
     ...edge,
     data: {
       ...edge.data,
-      isActive: edge.source === selectedNodeId || edge.target === selectedNodeId
-        ? true
-        : false,
+      isActive: touching(edge),
     },
   }));
 
@@ -429,9 +471,10 @@ function GraphCanvasInner({
   onRetry,
   namespaces,
   onToggleCollapse,
+  fitKey,
 }: GraphCanvasProps) {
   const { setViewport } = useReactFlow();
-  const prevNodeCountRef = useRef(0);
+  const hasFitRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const { savedPositions, savePosition, clearLayout } = useLayoutPersistence(graph, layoutMode);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -458,10 +501,10 @@ function GraphCanvasInner({
   }, []);
 
   // Memo 1: Expensive layout computation — NOT dependent on selectedNodeId
-  const { layoutNodes, layoutEdges } = useMemo(() => {
-    if (!graph?.nodes) return { layoutNodes: [], layoutEdges: [] };
-    const { nodes, edges } = computeLayout(graph, layoutMode, savedPositions, viewportSize, namespaces ?? new Map(), onToggleCollapse);
-    return { layoutNodes: nodes, layoutEdges: edges };
+  const { layoutNodes, layoutEdges, detailEdges } = useMemo(() => {
+    if (!graph?.nodes) return { layoutNodes: [], layoutEdges: [], detailEdges: undefined };
+    const { nodes, edges, detailEdges } = computeLayout(graph, layoutMode, savedPositions, viewportSize, namespaces ?? new Map(), onToggleCollapse);
+    return { layoutNodes: nodes, layoutEdges: edges, detailEdges };
   }, [graph, layoutMode, savedPositions, viewportSize, namespaces, onToggleCollapse]);
 
   // Latest layout + size for deferred fits (they run from timers).
@@ -492,9 +535,9 @@ function GraphCanvasInner({
   // Memo 2: Cheap highlighting — runs on node click, no layout recomputation
   const { flowNodes, flowEdges } = useMemo(() => {
     if (layoutNodes.length === 0) return { flowNodes: [], flowEdges: [] };
-    const { nodes, edges } = applyHighlighting(layoutNodes, layoutEdges, selectedNodeId, graph?.edges ?? []);
+    const { nodes, edges } = applyHighlighting(layoutNodes, layoutEdges, selectedNodeId, graph?.edges ?? [], detailEdges);
     return { flowNodes: nodes, flowEdges: edges };
-  }, [layoutNodes, layoutEdges, selectedNodeId, graph?.edges]);
+  }, [layoutNodes, layoutEdges, selectedNodeId, graph?.edges, detailEdges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
@@ -504,13 +547,19 @@ function GraphCanvasInner({
     setEdges(flowEdges);
   }, [flowNodes, flowEdges, setNodes, setEdges]);
 
+  // Fit once when the graph first arrives and whenever fitKey changes (the
+  // caller bumps it for filter changes). Not on every node-count change:
+  // expanding/collapsing a namespace or pods churning in a live cluster must
+  // leave the user's viewport alone.
+  const hasNodes = (graph?.nodes?.length ?? 0) > 0;
+  const prevFitKeyRef = useRef(fitKey);
   useEffect(() => {
-    const count = graph?.nodes?.length ?? 0;
-    if (count > 0 && count !== prevNodeCountRef.current) {
-      prevNodeCountRef.current = count;
-      setTimeout(() => fitView({ duration: 500 }), 100);
-    }
-  }, [graph?.nodes?.length, fitView]);
+    if (!hasNodes) return;
+    if (hasFitRef.current && fitKey === prevFitKeyRef.current) return;
+    hasFitRef.current = true;
+    prevFitKeyRef.current = fitKey;
+    setTimeout(() => fitView({ duration: 500 }), 100);
+  }, [hasNodes, fitKey, fitView]);
 
   // Reset positions when resetKey changes (triggered by "Reset Positions" button)
   const prevResetKeyRef = useRef(resetKey);
@@ -644,8 +693,15 @@ function GraphCanvasInner({
         <Controls
           className={styles.controls}
           showInteractive={false}
+          showFitView={false}
           position="bottom-right"
-        />
+        >
+          <ControlButton onClick={() => fitView({ duration: 400 })} title="Fit view" aria-label="Fit view">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={styles.strokeIcon}>
+              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+            </svg>
+          </ControlButton>
+        </Controls>
         <MiniMap
           className={styles.minimap}
           nodeColor="#2a2a2a"

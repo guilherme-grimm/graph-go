@@ -205,6 +205,14 @@ export default function Layout() {
   );
   const namespaces = useMemo(() => namespaceNames(graph), [graph]);
 
+  // Refit when what's shown changes because of a filter; collapse toggles
+  // deliberately don't refit.
+  const fitKey = useMemo(() => {
+    const params = new URLSearchParams();
+    writeFiltersToParams(filters, params);
+    return params.toString();
+  }, [filters]);
+
   const activeFilterCount = countActiveFilters(filters);
   const isFilteredEmpty = activeFilterCount > 0 && filteredGraph?.nodes?.length === 0 && nodeCount > 0;
 
@@ -246,6 +254,7 @@ export default function Layout() {
               graph={view?.graph}
               namespaces={view?.namespaces}
               onToggleCollapse={handleToggleCollapse}
+              fitKey={fitKey}
               selectedNodeId={selectedNodeId}
               onNodeSelect={handleNodeSelect}
               onEdgeClick={handleEdgeClick}
