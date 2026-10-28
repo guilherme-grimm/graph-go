@@ -264,16 +264,18 @@ function CollapseToggle({ name, collapsed, onToggle }: { name: string; collapsed
 
 // Health tally chips for a namespace: only non-healthy counts are called out,
 // since those are what someone scanning a big cluster is looking for.
+// "all healthy" means every child reported healthy, not merely no problems.
 function HealthTally({ counts }: { counts?: Record<HealthStatus, number> }) {
   if (!counts) return null;
   const problems = (['unhealthy', 'degraded'] as const).filter(h => counts[h] > 0);
   const total = counts.healthy + counts.degraded + counts.unhealthy + counts.unknown;
-  if (total > 0 && problems.length === 0) return <span className={styles.statChipGood}>all healthy</span>;
+  if (total > 0 && counts.healthy === total) return <span className={styles.statChipGood}>all healthy</span>;
   return (
     <>
       {problems.map(h => (
         <span key={h} className={styles[`statChip_${h}`]}>{counts[h]} {h}</span>
       ))}
+      {counts.unknown > 0 && <span className={styles.statChip}>{counts.unknown} unknown</span>}
     </>
   );
 }

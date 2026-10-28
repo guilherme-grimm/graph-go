@@ -288,3 +288,28 @@ func TestServiceSync_KeepsYAMLOverrideOnRefresh(t *testing.T) {
 		t.Errorf("refresh should keep the YAML config and not re-register, got %d registrations", len(reg.registered))
 	}
 }
+
+func TestServiceSync_ConcurrentRegisterAndUnchangedLookups(t *testing.T) {
+	reg := newTrackingRegistry()
+	ss := newServiceSync(reg, testCatalog(), nil, testLogger)
+
+	var services []discovery.ServiceInfo
+	for i := 0; i < 50; i++ {
+		services = append(services, discovery.ServiceInfo{
+			Name: fmt.Sprintf("svc-%d", i), Type: "test-type", Source: "docker",
+			Config: adapters.ConnectionConfig{"v": 1},
+		})
+	}
+	ss.apply(services, "docker")
+
+	// Change every other service so new registrations run while the loop
+	// keeps looking up unchanged ones. Run with -race.
+	for i := 0; i < len(services); i += 2 {
+		services[i].Config = adapters.ConnectionConfig{"v": 2}
+	}
+	ss.apply(services, "docker")
+
+	if len(reg.registered) != 75 {
+		t.Errorf("expected 50 initial + 25 changed registrations, got %d", len(reg.registered))
+	}
+}

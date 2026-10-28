@@ -63,10 +63,16 @@ func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Workers report successes here; s.known is only touched by this
+	// goroutine, so the loop can read it while workers run.
+	type registered struct {
+		name string
+		svc  knownService
+	}
 	var (
-		wg  sync.WaitGroup
-		sem = make(chan struct{}, registerConcurrency)
-		kmu sync.Mutex
+		wg      sync.WaitGroup
+		sem     = make(chan struct{}, registerConcurrency)
+		results = make(chan registered, len(services))
 	)
 	for _, svc := range services {
 		if len(svc.Nodes) > 0 || len(svc.Edges) > 0 {
@@ -101,12 +107,14 @@ func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string
 				return
 			}
 			s.logger.Infow("adapter registered", "service", svc.Name, "type", svc.Type)
-			kmu.Lock()
-			s.known[svc.Name] = knownService{connType: svc.Type, source: svc.Source, config: svc.Config}
-			kmu.Unlock()
+			results <- registered{svc.Name, knownService{connType: svc.Type, source: svc.Source, config: svc.Config}}
 		}(svc)
 	}
 	wg.Wait()
+	close(results)
+	for r := range results {
+		s.known[r.name] = r.svc
+	}
 
 	if pruneSource != "" {
 		for name, k := range s.known {

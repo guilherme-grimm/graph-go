@@ -29,6 +29,16 @@ import {
 import type { Graph, GraphEdge } from '../types';
 import styles from './Layout.module.css';
 
+// Query string to carry across node navigation: filters and collapse state
+// stay, but a selected edge doesn't (the URL restore effect would reopen it
+// next to the node). Read live, since setSearchParams may have just changed it.
+function searchWithoutEdge(): string {
+  const params = new URLSearchParams(window.location.search);
+  params.delete('edge');
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
 export default function Layout() {
   const { nodeId: urlNodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
@@ -135,21 +145,18 @@ export default function Layout() {
         }, { replace: true });
       } else if (selectedNodeId) {
         setSelectedNodeId(null);
-        navigate({ pathname: '/', search: window.location.search }, { replace: true });
+        navigate({ pathname: '/', search: searchWithoutEdge() }, { replace: true });
       }
     }, [searchOpen, selectedEdge, selectedNodeId, navigate, setSearchParams]),
   });
 
-  // Node selection changes the path; the query string carries filters and
-  // collapse state, so it is kept (read live, since setSearchParams may have
-  // just updated it in the same handler).
   const handleNodeSelect = useCallback((nodeId: string | null) => {
     setSelectedNodeId(nodeId);
     setSelectedEdge(null);
     if (nodeId) {
-      navigate({ pathname: `/node/${nodeId}`, search: window.location.search }, { replace: true });
+      navigate({ pathname: `/node/${nodeId}`, search: searchWithoutEdge() }, { replace: true });
     } else {
-      navigate({ pathname: '/', search: window.location.search }, { replace: true });
+      navigate({ pathname: '/', search: searchWithoutEdge() }, { replace: true });
     }
   }, [navigate]);
 
@@ -167,7 +174,7 @@ export default function Layout() {
     setSelectedNodeId(nodeId);
     setSelectedEdge(null);
     setSearchOpen(false);
-    navigate({ pathname: `/node/${nodeId}`, search: window.location.search }, { replace: true });
+    navigate({ pathname: `/node/${nodeId}`, search: searchWithoutEdge() }, { replace: true });
   }, [navigate, graph, updateCollapse]);
 
   const handleEdgeClick = useCallback((edge: GraphEdge) => {

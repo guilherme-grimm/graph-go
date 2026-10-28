@@ -183,6 +183,11 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 		seeded     bool
 		prevPrint  uint64
 		prevHealth = map[string]string{}
+		// resendFull makes the next tick send every node's health, not just
+		// changes. Set after the first tick (its batch can arrive before the
+		// client has loaded the graph and be dropped) and after a topology
+		// change (the batch can land before the client's refetch finishes).
+		resendFull bool
 	)
 
 	for {
@@ -195,7 +200,8 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 		if g != nil {
 			// Detect graph topology changes (nodes added/removed).
 			fp := nodeSetFingerprint(g)
-			if seeded && fp != prevPrint {
+			topologyChanged := seeded && fp != prevPrint
+			if topologyChanged {
 				if err := writeJSON(socketCtx, socket, wsMessage{Type: "graph_update", Payload: struct{}{}}); err != nil {
 					return
 				}
@@ -206,13 +212,18 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 			// one message. Per-node messages meant thousands of frames (and
 			// thousands of client re-renders) every tick on large clusters.
 			current := nodeHealths(g, s.registry.HealthAll())
+			base := prevHealth
+			if resendFull {
+				base = nil
+			}
 			updates := make([]healthUpdate, 0)
 			for id, h := range current {
-				if prevHealth[id] != h {
+				if base[id] != h {
 					updates = append(updates, healthUpdate{NodeID: id, Health: h})
 				}
 			}
 			prevHealth = current
+			resendFull = !seeded || topologyChanged
 			if len(updates) > 0 {
 				sort.Slice(updates, func(i, j int) bool { return updates[i].NodeID < updates[j].NodeID })
 				if err := writeJSON(socketCtx, socket, wsMessage{Type: "health_batch", Payload: healthBatch{Updates: updates}}); err != nil {

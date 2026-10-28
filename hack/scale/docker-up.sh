@@ -12,7 +12,10 @@ IMAGE=${IMAGE:-traefik/whoami:v1.10}
 docker pull -q "$IMAGE" >/dev/null
 for i in $(seq 1 "$COUNT"); do
   name=$(printf 'scale-web-%03d' "$i")
-  docker inspect "$name" >/dev/null 2>&1 && continue
+  case $(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null) in
+    true) continue ;;
+    false) docker start "$name" >/dev/null; continue ;;
+  esac
   docker run -d --name "$name" --label graphgo.scale=1 \
     -e WHOAMI_PORT_NUMBER=8080 --memory 32m "$IMAGE" >/dev/null
 done

@@ -293,3 +293,26 @@ func TestWebSocket_ClientClose(t *testing.T) {
 	// caught by the race detector or -count flag. Here we just verify
 	// the close doesn't panic.
 }
+
+func TestWebSocket_ResendsFullSnapshotAfterFirstTick(t *testing.T) {
+	reg := &mockRegistry{
+		graph: &graph.Graph{
+			Nodes: []nodes.Node{{Id: "pod-a", Health: "healthy"}},
+		},
+	}
+	s := newTestServer(reg)
+	conn, cleanup := dialTestWebSocket(t, s)
+	defer cleanup()
+
+	// Ticks are 5s apart: the first tick and the full resend on the second.
+	msgs := readAllMessages(t, conn, 7*time.Second)
+	count := 0
+	for _, m := range msgs {
+		if m.Payload.NodeID == "pod-a" {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("expected pod-a health on the first tick and again on the resend, got %d", count)
+	}
+}

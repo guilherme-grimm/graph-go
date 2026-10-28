@@ -27,6 +27,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The rolling `nightly` tag isn't semver; if git describe picked it,
+      # the snapshot version template (incpatch) would fail.
+      - name: Drop rolling nightly tag locally
+        run: git tag -d nightly || true
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"

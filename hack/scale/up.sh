@@ -60,14 +60,16 @@ done | kubectl apply -f - >/dev/null
 
 gen() {
   local n d ns name fail selector
-  for n in $(seq -w 1 "$NAMESPACES"); do
-    ns="scale-$n"
+  for n in $(seq 1 "$NAMESPACES"); do
+    # Fixed-width names so re-running with more namespaces scales the
+    # existing ones instead of creating scale-001 next to scale-01.
+    ns=$(printf 'scale-%02d' "$n")
     printf -- '---\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: %s\n' "$ns"
     for d in $(seq 1 "$DEPLOYS"); do
       name="app-$d"
       fail=false
       selector='{type: kwok}'
-      if (( (10#$n * DEPLOYS + d) % UNHEALTHY_EVERY == 0 )); then
+      if (( (n * DEPLOYS + d) % UNHEALTHY_EVERY == 0 )); then
         fail=true
         # No node carries this label, so these pods stay Pending forever.
         selector='{type: kwok, graphgo.scale/none: "true"}'

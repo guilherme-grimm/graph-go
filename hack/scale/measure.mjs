@@ -52,7 +52,9 @@ const measure = async (page) => {
     domEdges: document.querySelectorAll('.react-flow__edge').length,
     heapMB: Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1048576),
     loadLongTaskMs: Math.round(window.__longTasks),
-    layoutLabel: document.querySelector('button[aria-haspopup="listbox"]')?.textContent?.trim(),
+    // The UI may swap the requested layout for swimlane on large graphs;
+    // report what actually rendered so results aren't mislabeled.
+    activeLayout: document.querySelector('button[aria-haspopup="listbox"]')?.textContent?.replace('Layout:', '').trim(),
   }));
 
   // Pan for ~3s and count animation frames.
@@ -86,7 +88,7 @@ const measure = async (page) => {
   }));
 
   return {
-    layout: LAYOUT,
+    requestedLayout: LAYOUT,
     firstRenderMs,
     ...counts,
     panFps: Math.round((frames / panMs) * 1000),
