@@ -25,7 +25,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 | `internal/discovery/docker` | Docker discoverer: classifies containers, extracts credentials, watches Docker events, honors `graphgo.*` labels. |
 | `internal/discovery/kubernetes` | K8s discoverer: informers with debounced events, maps cluster snapshot to topology nodes/edges. |
 | `internal/adapters` | The `Adapter` interface, factory registry, `Registry` (the aggregator), cache, singleflight, topology merge. |
-| `internal/adapters/{postgres,mongodb,mysql,redis,elasticsearch,s3,http}` | One package per datastore. Self-registers via `init()`. |
+| `internal/adapters/{postgres,mongodb,mysql,redis,elasticsearch,s3,http}` | One package per datastore. Listed in `catalog.Default()` (ADR-0002). |
 | `internal/adapters/adaptertest` | The contract test suite every adapter must pass. |
 | `internal/graph` | The graph model: `Graph`, `nodes.Node`, `edges.Edge`, `health.Status`. |
 | `internal/server` | HTTP server, routes, CORS, WebSocket, registry/bootstrap wiring. |
@@ -91,7 +91,8 @@ type Discoverer interface {
 
 ```go
 type Registry interface {
-    Register(name string, connType string, adapter Adapter, config ConnectionConfig) error
+    Register(name string, connType string, adapter Adapter, config ConnectionConfig) error // closes the adapter it replaces
+    Unregister(name string) error // closes + removes; next DiscoverAll drops its nodes
     Get(name string) (Adapter, bool)
     Names() []string
     DiscoverAll() (*graph.Graph, error)
@@ -168,10 +169,10 @@ Kubernetes-discovered (topology):
 
 1. CLI (`cmd/app`) builds config + logger, calls `server.NewServer`.
 2. `NewServer` → `BuildRegistry` (in `bootstrap.go`): constructs adapters from config connections + Docker-discovered services, registers each, builds discoverers, starts a `Watch()` goroutine per discoverer.
-3. `Watch` callback (`buildOnChange`): topology-producing discoverers re-read their snapshot and `SetTopology`; adapter-oriented discoverers just `InvalidateCache` so the next `DiscoverAll` re-queries.
+3. `Watch` callback (`buildOnChange`): topology-producing discoverers re-read their snapshot and `SetTopology`; adapter-oriented discoverers re-sync through `serviceSync` (`internal/server/sync.go`), which merges YAML overrides, skips services whose type+config are unchanged, (re)registers the rest in parallel, and unregisters services from that source that disappeared (stale-node pruning). YAML-only connections are never pruned.
 4. `DiscoverAll`: cache check (RLock) → singleflight → double-check → snapshot adapters (RLock, release before I/O) → sequential `adapter.Discover()` per adapter → synthesize service nodes + re-parent children → merge topology → cache + return shallow copy.
 5. HTTP routes: `GET /api/graph` (full graph), `GET /api/node/{id}`, `GET /api/health` (adapter health), `WS /websocket` (live updates), `GET /health` (liveness), SPA fallback for the embedded UI.
-6. WebSocket: emits `health_update` (every node, every 5s) and `graph_update` (when the node-ID set changes; payload empty → client re-fetches `/api/graph`). Messages wrapped as `{ "type", "payload" }`; no timestamp field.
+6. WebSocket: emits `health_batch` (every 5s, only nodes whose health changed since the last tick for that connection; nothing when nothing changed) and `graph_update` (when the node-ID set changes; payload empty → client re-fetches `/api/graph`). Messages wrapped as `{ "type", "payload" }`; no timestamp field.
 7. Graceful shutdown: signal → stop HTTP server → `cleanup()` (closes discoverers + `CloseAll` adapters).
 
 ---
