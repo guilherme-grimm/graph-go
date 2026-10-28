@@ -69,7 +69,9 @@ gen() {
       name="app-$d"
       fail=false
       selector='{type: kwok}'
-      if (( (n * DEPLOYS + d) % UNHEALTHY_EVERY == 0 )); then
+      # Keyed on namespace/deployment numbers only, so re-running with a
+      # different DEPLOYS never flips an existing deployment's health.
+      if (( (n * 31 + d) % UNHEALTHY_EVERY == 0 )); then
         fail=true
         # No node carries this label, so these pods stay Pending forever.
         selector='{type: kwok, graphgo.scale/none: "true"}'

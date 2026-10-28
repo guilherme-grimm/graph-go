@@ -12,9 +12,12 @@ IMAGE=${IMAGE:-traefik/whoami:v1.10}
 docker pull -q "$IMAGE" >/dev/null
 for i in $(seq 1 "$COUNT"); do
   name=$(printf 'scale-web-%03d' "$i")
-  case $(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null) in
-    true) continue ;;
-    false) docker start "$name" >/dev/null; continue ;;
+  state=$(docker inspect -f '{{index .Config.Labels "graphgo.scale"}} {{.State.Running}}' "$name" 2>/dev/null || true)
+  case $state in
+    "1 true") continue ;;
+    "1 false") docker start "$name" >/dev/null; continue ;;
+    "") ;; # free name
+    *) echo "refusing to reuse $name: it exists but is not a scale container" >&2; exit 1 ;;
   esac
   docker run -d --name "$name" --label graphgo.scale=1 \
     -e WHOAMI_PORT_NUMBER=8080 --memory 32m "$IMAGE" >/dev/null
