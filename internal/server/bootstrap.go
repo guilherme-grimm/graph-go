@@ -27,13 +27,14 @@ import (
 //
 // It does NOT start Watch() loops — that's NewServer's job.
 func BuildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (adapters.Registry, []discovery.Discoverer, func()) {
-	reg, discoverers, _, cleanup := buildRegistry(cfg, logger, cat)
+	reg, discoverers, _, _, cleanup := buildRegistry(cfg, logger, cat)
 	return reg, discoverers, cleanup
 }
 
 // buildRegistry is BuildRegistry plus the serviceSync that later discoverer
-// refreshes must reuse, so they can tell unchanged services from removed ones.
-func buildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (adapters.Registry, []discovery.Discoverer, *serviceSync, func()) {
+// refreshes must reuse, so they can tell unchanged services from removed ones,
+// and the first sync's result for the startup report.
+func buildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (adapters.Registry, []discovery.Discoverer, *serviceSync, syncResult, func()) {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -62,7 +63,7 @@ func buildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.C
 		}
 	}
 	svcSync := newServiceSync(reg, cat, yamlEntries, logger)
-	svcSync.apply(services, "")
+	initial := svcSync.apply(services, "")
 
 	cleanup := func() {
 		for _, d := range discoverers {
@@ -75,7 +76,7 @@ func buildRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.C
 		}
 	}
 
-	return reg, discoverers, svcSync, cleanup
+	return reg, discoverers, svcSync, initial, cleanup
 }
 
 // discoverAll runs Discover() on every discoverer in parallel and returns

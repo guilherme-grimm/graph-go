@@ -41,6 +41,24 @@ func newServiceSync(reg adapters.Registry, cat adapters.Catalog, yaml []discover
 	return &serviceSync{reg: reg, cat: cat, yaml: yaml, logger: logger, known: make(map[string]knownService)}
 }
 
+// syncResult is what one apply attempted: every adapter it tried to register
+// (unchanged services are skipped, so they are absent) and every topology
+// source it replaced.
+type syncResult struct {
+	adapters []adapterResult
+	topology []topologyResult
+}
+
+type adapterResult struct {
+	name, connType string
+	err            error
+}
+
+type topologyResult struct {
+	source       string
+	nodes, edges int
+}
+
 // apply splits ServiceInfo entries into topology (ones carrying pre-built
 // Nodes, like Kubernetes resources) and adapter-bound ones, then pushes each
 // into the registry appropriately. Topology entries are grouped by Source so
@@ -50,7 +68,7 @@ func newServiceSync(reg adapters.Registry, cat adapters.Catalog, yaml []discover
 // override to the discovered config. When pruneSource is non-empty, adapters
 // previously registered from that source but absent from services are
 // unregistered.
-func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string) {
+func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string) syncResult {
 	services = discovery.MergeWithYAML(services, s.yaml)
 
 	type bucket struct {
@@ -63,13 +81,15 @@ func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Workers report successes here; s.known is only touched by this
+	// Workers report outcomes here; s.known is only touched by this
 	// goroutine, so the loop can read it while workers run.
 	type registered struct {
 		name string
 		svc  knownService
+		err  error
 	}
 	var (
+		res     syncResult
 		wg      sync.WaitGroup
 		sem     = make(chan struct{}, registerConcurrency)
 		results = make(chan registered, len(services))
@@ -94,6 +114,7 @@ func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string
 		adapter, err := s.cat.New(svc.Type, s.logger)
 		if err != nil {
 			s.logger.Warnw("skipping service: unknown adapter type", "service", svc.Name, "type", svc.Type, "err", err)
+			res.adapters = append(res.adapters, adapterResult{svc.Name, svc.Type, err})
 			continue
 		}
 
@@ -102,18 +123,23 @@ func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string
 		go func(svc discovery.ServiceInfo) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			k := knownService{connType: svc.Type, source: svc.Source, config: svc.Config}
 			if err := s.reg.Register(svc.Name, svc.Type, adapter, svc.Config); err != nil {
 				s.logger.Warnw("adapter register failed", "service", svc.Name, "type", svc.Type, "err", err)
+				results <- registered{svc.Name, k, err}
 				return
 			}
 			s.logger.Infow("adapter registered", "service", svc.Name, "type", svc.Type)
-			results <- registered{svc.Name, knownService{connType: svc.Type, source: svc.Source, config: svc.Config}}
+			results <- registered{svc.Name, k, nil}
 		}(svc)
 	}
 	wg.Wait()
 	close(results)
 	for r := range results {
-		s.known[r.name] = r.svc
+		res.adapters = append(res.adapters, adapterResult{r.name, r.svc.connType, r.err})
+		if r.err == nil {
+			s.known[r.name] = r.svc
+		}
 	}
 
 	if pruneSource != "" {
@@ -132,5 +158,7 @@ func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string
 	for source, b := range topologyBySource {
 		s.reg.SetTopology(source, b.nodes, b.edges)
 		s.logger.Infow("topology applied", "source", source, "nodes", len(b.nodes), "edges", len(b.edges))
+		res.topology = append(res.topology, topologyResult{source, len(b.nodes), len(b.edges)})
 	}
+	return res
 }

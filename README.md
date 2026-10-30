@@ -113,7 +113,7 @@ Open **http://localhost:8080**. Other platforms on the [Releases page](https://g
 | Command | What it does |
 |---|---|
 | `graph-go demo` | Boot the seeded Docker Compose demo stack from the repository and stream its output in the foreground. |
-| `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). |
+| `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). Once the first discovery finishes it prints a ✓/✗ line per adapter to stderr, with what it found or why it failed (skipped with `--log-format json`). |
 | `graph-go scan` | Run discovery once and emit the graph as JSON to stdout. Useful for piping into `jq`, CI checks, or one-shot exports. |
 | `graph-go version` | Print version, commit, and build date. |
 | `graph-go --health-check` | Hit local `/health` and exit `0`/`1`. Used by the container `HEALTHCHECK`; not for interactive use. |
