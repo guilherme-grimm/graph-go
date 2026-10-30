@@ -8,10 +8,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
@@ -42,9 +43,7 @@ users:
   user:
     token: x
 `, server)
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	return path
 }
 
@@ -52,9 +51,7 @@ users:
 func closedAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	addr := l.Addr().String()
 	l.Close()
 	return addr
@@ -78,16 +75,12 @@ func TestNewFailsFastOnUnreachableCluster(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			start := time.Now()
 			d, err := kubernetes.New(kubernetes.Config{KubeconfigPath: writeKubeconfig(t, tt.server)})
-			if err == nil {
-				_ = d.Close()
-				t.Fatal("expected an error for an unreachable cluster")
+			if d != nil {
+				t.Cleanup(func() { _ = d.Close() })
 			}
-			if !strings.Contains(err.Error(), "unreachable") {
-				t.Errorf("error %q does not say the cluster is unreachable", err)
-			}
-			if elapsed := time.Since(start); elapsed > 5*time.Second {
-				t.Errorf("New took %s, want it bounded by the probe timeout", elapsed)
-			}
+			require.Error(t, err, "unreachable cluster")
+			assert.ErrorContains(t, err, "unreachable")
+			assert.Less(t, time.Since(start), 5*time.Second, "New should be bounded by the probe timeout")
 		})
 	}
 }
@@ -119,10 +112,8 @@ func TestDiscoverHonoursContextWhenCacheNeverSyncs(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err == nil {
-			t.Fatal("expected an error when caches never sync")
-		}
+		require.Error(t, err, "caches never sync")
 	case <-time.After(5 * time.Second):
-		t.Fatal("Discover ignored its context and hung")
+		require.FailNow(t, "Discover ignored its context and hung")
 	}
 }
