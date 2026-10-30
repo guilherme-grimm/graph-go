@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -75,7 +77,7 @@ func runServe(configPath, logLevel, logFormat string) error {
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			logger.Infow("no config file found — running in auto-discovery mode", "path", configPath)
 		} else {
 			logger.Warnw("failed to load config — running in auto-discovery mode", "path", configPath, "err", err)

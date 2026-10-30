@@ -31,7 +31,9 @@ func New(level, format string) (*zap.SugaredLogger, error) {
 	cfg.Level = zap.NewAtomicLevelAt(lvl)
 	cfg.DisableStacktrace = lvl > zapcore.ErrorLevel
 
-	l, err := cfg.Build()
+	// The development config attaches a stack trace to every warning, which
+	// buries routine ones like "adapter register failed". Keep them for errors.
+	l, err := cfg.Build(zap.AddStacktrace(zapcore.ErrorLevel))
 	if err != nil {
 		return nil, fmt.Errorf("build logger: %w", err)
 	}
