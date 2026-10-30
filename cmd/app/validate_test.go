@@ -3,8 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateCommand(t *testing.T) {
@@ -45,21 +47,17 @@ connections:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.yaml")
-			if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, os.WriteFile(path, []byte(tt.body), 0o600))
 
 			stdout, stderr, err := executeCommand(newRootCmd(), "validate", "-c", path)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
-			if stdout != "" {
-				t.Errorf("stdout should be empty, got %q", stdout)
-			}
+			assert.Empty(t, stdout, "stdout should stay empty")
 			for _, sub := range tt.wantStderr {
-				if !strings.Contains(stderr, sub) {
-					t.Errorf("stderr missing %q\nfull stderr:\n%s", sub, stderr)
-				}
+				assert.Contains(t, stderr, sub)
 			}
 		})
 	}
@@ -67,7 +65,5 @@ connections:
 
 func TestValidateMissingFileFails(t *testing.T) {
 	_, _, err := executeCommand(newRootCmd(), "validate", "-c", filepath.Join(t.TempDir(), "nope.yaml"))
-	if err == nil {
-		t.Fatal("expected error for missing config file")
-	}
+	require.Error(t, err, "missing config file")
 }

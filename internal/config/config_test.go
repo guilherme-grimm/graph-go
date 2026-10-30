@@ -1,10 +1,13 @@
 package config_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/guilherme-grimm/graph-go/internal/config"
 )
@@ -12,9 +15,7 @@ import (
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600), "write config")
 	return path
 }
 
@@ -129,16 +130,10 @@ connections:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			problems, err := config.Check(writeConfig(t, tt.body))
-			if err != nil {
-				t.Fatalf("Check: %v", err)
-			}
-			if len(problems) != len(tt.want) {
-				t.Fatalf("got %d problems, want %d: %v", len(problems), len(tt.want), problems)
-			}
+			require.NoError(t, err, "Check")
+			require.Len(t, problems, len(tt.want), "problems: %v", problems)
 			for i, sub := range tt.want {
-				if !strings.Contains(problems[i].Error(), sub) {
-					t.Errorf("problem[%d] = %q, want it to contain %q", i, problems[i], sub)
-				}
+				assert.ErrorContains(t, problems[i], sub, "problem[%d]", i)
 			}
 		})
 	}
@@ -146,12 +141,9 @@ connections:
 
 func TestCheckMissingFile(t *testing.T) {
 	_, err := config.Check(filepath.Join(t.TempDir(), "nope.yaml"))
-	if err == nil {
-		t.Fatal("expected error for missing file")
-	}
-	if !os.IsNotExist(err) && !strings.Contains(err.Error(), "failed to read") {
-		t.Errorf("unexpected error: %v", err)
-	}
+	require.Error(t, err, "missing file")
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+	assert.ErrorContains(t, err, "failed to read")
 }
 
 // Every config the repo ships must pass the strict check, so the examples
@@ -167,12 +159,8 @@ func TestShippedConfigsAreValid(t *testing.T) {
 	for _, path := range paths {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			problems, err := config.Check(path)
-			if err != nil {
-				t.Fatalf("Check: %v", err)
-			}
-			for _, p := range problems {
-				t.Error(p)
-			}
+			require.NoError(t, err, "Check")
+			assert.Empty(t, problems)
 		})
 	}
 }
@@ -186,12 +174,7 @@ connections:
     type: mongodb
 `)
 	_, err := config.Load(path)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	for _, sub := range []string{"'dsn' is required", "'uri' is required"} {
-		if !strings.Contains(err.Error(), sub) {
-			t.Errorf("error %q missing %q", err, sub)
-		}
-	}
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "'dsn' is required")
+	assert.ErrorContains(t, err, "'uri' is required")
 }
