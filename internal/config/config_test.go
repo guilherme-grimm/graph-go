@@ -121,6 +121,11 @@ connections:
 			body: "connections: []\n---\n# only a comment\n---\n",
 		},
 		{
+			name: "syntax error in a later document is reported",
+			body: "connections: []\n---\nconnections: [\n",
+			want: []string{"after the first document: yaml: line 3"},
+		},
+		{
 			name: "syntax error stops validation",
 			body: "connections: [\n",
 			want: []string{"failed to parse"},

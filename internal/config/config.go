@@ -111,6 +111,9 @@ func Check(path string) ([]error, error) {
 	for {
 		var extra yaml.Node
 		if err := dec.Decode(&extra); err != nil {
+			if !errors.Is(err, io.EOF) {
+				problems = append(problems, fmt.Errorf("config: failed to parse %s after the first document: %w", path, err))
+			}
 			break
 		}
 		if hasContent(&extra) {
