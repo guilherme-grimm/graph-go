@@ -72,7 +72,12 @@ func index(g *graph.Graph) *tree {
 		t.edges = append(t.edges, e)
 	}
 	slices.SortFunc(t.edges, func(a, b edges.Edge) int {
-		return cmp.Or(cmp.Compare(a.Source, b.Source), cmp.Compare(a.Target, b.Target), cmp.Compare(a.Type, b.Type))
+		return cmp.Or(
+			cmp.Compare(a.Source, b.Source),
+			cmp.Compare(a.Target, b.Target),
+			cmp.Compare(a.Type, b.Type),
+			cmp.Compare(edgeLabel(a), edgeLabel(b)),
+		)
 	})
 
 	return t
@@ -137,7 +142,9 @@ func healthClass(h string) string {
 	return ""
 }
 
-var mermaidEscaper = strings.NewReplacer(`"`, "#quot;", "<", "#lt;", ">", "#gt;")
+// mermaidEscaper also flattens line breaks: a label line holding only ```
+// would otherwise close the Markdown fence around the diagram.
+var mermaidEscaper = strings.NewReplacer(`"`, "#quot;", "<", "#lt;", ">", "#gt;", "\r\n", " ", "\n", " ", "\r", " ")
 
 // Mermaid writes g as a Mermaid flowchart. With fenced set, the diagram is
 // wrapped in a ```mermaid block so it renders when saved as Markdown.
@@ -201,7 +208,7 @@ var dotFill = map[string]string{
 	"unhealthy": "#fdecea",
 }
 
-var dotEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
+var dotEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\r\n", `\n`, "\n", `\n`, "\r", `\n`)
 
 // DOT writes g as a Graphviz digraph. Groups become clusters; the parent node
 // is also drawn inside its cluster so edges can point at it.

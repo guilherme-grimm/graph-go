@@ -152,3 +152,52 @@ func TestParentCycleStillRendersEveryNode(t *testing.T) {
 		}
 	}
 }
+
+func TestParallelEdgesSortByLabel(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []nodes.Node{{Id: "api", Name: "api"}, {Id: "db", Name: "db"}},
+		Edges: []edges.Edge{
+			{Id: "e1", Source: "api", Target: "db", Type: "depends_on", Label: "writes"},
+			{Id: "e2", Source: "api", Target: "db", Type: "depends_on", Label: "reads"},
+		},
+	}
+	swapped := &graph.Graph{Nodes: g.Nodes, Edges: []edges.Edge{g.Edges[1], g.Edges[0]}}
+
+	if a, b := mermaid(t, g, false), mermaid(t, swapped, false); a != b {
+		t.Errorf("mermaid output depends on edge order:\n%s\nvs\n%s", a, b)
+	}
+	if a, b := dot(t, g), dot(t, swapped); a != b {
+		t.Errorf("dot output depends on edge order:\n%s\nvs\n%s", a, b)
+	}
+}
+
+func TestMultilineLabelsStayInsideFence(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []nodes.Node{
+			{Id: "a", Name: "evil\n```\nafter"},
+			{Id: "b", Name: "b\r\nc"},
+		},
+		Edges: []edges.Edge{{Id: "e", Source: "a", Target: "b", Type: "x", Label: "one\ntwo"}},
+	}
+	out := mermaid(t, g, true)
+
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	for i, line := range lines[1 : len(lines)-1] {
+		if strings.TrimSpace(line) == "```" {
+			t.Errorf("line %d closes the fence early:\n%s", i+1, out)
+		}
+	}
+	for _, want := range []string{"[\"evil ``` after\"]", `["b c"]`, `-->|"one two"|`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\n%s", want, out)
+		}
+	}
+
+	// DOT keeps the breaks, escaped, so labels stay on one source line.
+	d := dot(t, g)
+	for _, want := range []string{"label=\"evil\\n```\\nafter\"", `label="b\nc"`, `label="one\ntwo"`} {
+		if !strings.Contains(d, want) {
+			t.Errorf("dot output missing %q\n%s", want, d)
+		}
+	}
+}
