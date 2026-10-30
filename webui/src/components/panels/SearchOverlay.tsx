@@ -41,15 +41,23 @@ export default function SearchOverlay({
 
   const { data: graph } = useGraph();
 
-  // Debounce search query; a new query restarts selection and paging.
+  // Debounce search query
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query);
-      setSelectedIndex(0);
-      setDisplayLimit(20);
     }, 150);
     return () => clearTimeout(timer);
   }, [query]);
+
+  // A new debounced query restarts selection and paging. Only an actual
+  // change counts: typing and deleting a character within the debounce
+  // window must not move the keyboard selection.
+  const [prevDebouncedQuery, setPrevDebouncedQuery] = useState(debouncedQuery);
+  if (debouncedQuery !== prevDebouncedQuery) {
+    setPrevDebouncedQuery(debouncedQuery);
+    setSelectedIndex(0);
+    setDisplayLimit(20);
+  }
 
   // Start fresh each time the overlay opens. Adjusting state during render
   // (rather than in an effect) avoids a frame showing the previous search.

@@ -79,6 +79,9 @@ export function useWebSocket() {
         reconnectAttemptRef.current++;
 
         reconnectTimeoutRef.current = setTimeout(() => {
+          // A stale timer (e.g. two sockets closing under StrictMode) must not
+          // flip an open connection back to "connecting".
+          if (wsRef.current?.readyState === WebSocket.OPEN) return;
           setStatus('connecting');
           connectRef.current();
         }, delay);
