@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/guilherme-grimm/graph-go/internal/graph"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
@@ -36,18 +39,14 @@ func testGraph() *graph.Graph {
 func mermaid(t *testing.T, g *graph.Graph, fenced bool) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := render.Mermaid(&buf, g, fenced); err != nil {
-		t.Fatalf("Mermaid: %v", err)
-	}
+	require.NoError(t, render.Mermaid(&buf, g, fenced), "Mermaid")
 	return buf.String()
 }
 
 func dot(t *testing.T, g *graph.Graph) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := render.DOT(&buf, g); err != nil {
-		t.Fatalf("DOT: %v", err)
-	}
+	require.NoError(t, render.DOT(&buf, g), "DOT")
 	return buf.String()
 }
 
@@ -71,28 +70,19 @@ func TestMermaid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if !strings.Contains(out, tt.want) {
-				t.Errorf("output missing %q\nfull output:\n%s", tt.want, out)
-			}
+			assert.Contains(t, out, tt.want)
 		})
 	}
 
-	if strings.Contains(out, `n1 -->|"contains"| n0`) {
-		t.Errorf("contains edge into a subgraph child should be dropped\n%s", out)
-	}
-	if strings.Contains(out, "missing") {
-		t.Errorf("edge to unknown node should be dropped\n%s", out)
-	}
-	if strings.Contains(out, "```") {
-		t.Errorf("unfenced output should not contain a code fence\n%s", out)
-	}
+	assert.NotContains(t, out, `n1 -->|"contains"| n0`, "contains edge into a subgraph child should be dropped")
+	assert.NotContains(t, out, "missing", "edge to unknown node should be dropped")
+	assert.NotContains(t, out, "```", "unfenced output should not contain a code fence")
 }
 
 func TestMermaidFenced(t *testing.T) {
 	out := mermaid(t, testGraph(), true)
-	if !strings.HasPrefix(out, "```mermaid\nflowchart LR\n") || !strings.HasSuffix(out, "```\n") {
-		t.Errorf("fenced output not wrapped in a mermaid block:\n%s", out)
-	}
+	assert.True(t, strings.HasPrefix(out, "```mermaid\nflowchart LR\n"), "fenced output should open a mermaid block:\n%s", out)
+	assert.True(t, strings.HasSuffix(out, "```\n"), "fenced output should close the block:\n%s", out)
 }
 
 func TestDOT(t *testing.T) {
@@ -106,9 +96,7 @@ func TestDOT(t *testing.T) {
 		`  n4 [label="orders \"main\" (postgres)", shape=cylinder, style="rounded,filled", fillcolor="#fff4e5"];`,
 		`  n2 -> n4 [label="orders db"];`,
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q\nfull output:\n%s", want, out)
-		}
+		assert.Contains(t, out, want)
 	}
 }
 
@@ -120,9 +108,8 @@ func TestDOTIsValidGraphviz(t *testing.T) {
 	}
 	cmd := exec.Command(bin, "-Tsvg")
 	cmd.Stdin = strings.NewReader(dot(t, testGraph()))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("dot rejected output: %v\n%s", err, out)
-	}
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "dot rejected output:\n%s", out)
 }
 
 func TestDeterministic(t *testing.T) {
@@ -132,12 +119,8 @@ func TestDeterministic(t *testing.T) {
 		reversed.Nodes = append(reversed.Nodes, g.Nodes[i])
 	}
 
-	if a, b := mermaid(t, g, false), mermaid(t, reversed, false); a != b {
-		t.Errorf("mermaid output depends on node order:\n%s\nvs\n%s", a, b)
-	}
-	if a, b := dot(t, g), dot(t, reversed); a != b {
-		t.Errorf("dot output depends on node order:\n%s\nvs\n%s", a, b)
-	}
+	assert.Equal(t, mermaid(t, g, false), mermaid(t, reversed, false), "mermaid output should not depend on node order")
+	assert.Equal(t, dot(t, g), dot(t, reversed), "dot output should not depend on node order")
 }
 
 func TestParentCycleStillRendersEveryNode(t *testing.T) {
@@ -147,9 +130,7 @@ func TestParentCycleStillRendersEveryNode(t *testing.T) {
 	}}
 	out := mermaid(t, g, false)
 	for _, want := range []string{`["a"]`, `["b"]`} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q\n%s", want, out)
-		}
+		assert.Contains(t, out, want)
 	}
 }
 
@@ -163,12 +144,8 @@ func TestParallelEdgesSortByLabel(t *testing.T) {
 	}
 	swapped := &graph.Graph{Nodes: g.Nodes, Edges: []edges.Edge{g.Edges[1], g.Edges[0]}}
 
-	if a, b := mermaid(t, g, false), mermaid(t, swapped, false); a != b {
-		t.Errorf("mermaid output depends on edge order:\n%s\nvs\n%s", a, b)
-	}
-	if a, b := dot(t, g), dot(t, swapped); a != b {
-		t.Errorf("dot output depends on edge order:\n%s\nvs\n%s", a, b)
-	}
+	assert.Equal(t, mermaid(t, g, false), mermaid(t, swapped, false), "mermaid output should not depend on edge order")
+	assert.Equal(t, dot(t, g), dot(t, swapped), "dot output should not depend on edge order")
 }
 
 func TestMultilineLabelsStayInsideFence(t *testing.T) {
@@ -183,21 +160,15 @@ func TestMultilineLabelsStayInsideFence(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	for i, line := range lines[1 : len(lines)-1] {
-		if strings.TrimSpace(line) == "```" {
-			t.Errorf("line %d closes the fence early:\n%s", i+1, out)
-		}
+		assert.NotEqual(t, "```", strings.TrimSpace(line), "line %d closes the fence early:\n%s", i+1, out)
 	}
 	for _, want := range []string{"[\"evil ``` after\"]", `["b c"]`, `-->|"one two"|`} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q\n%s", want, out)
-		}
+		assert.Contains(t, out, want)
 	}
 
 	// DOT keeps the breaks, escaped, so labels stay on one source line.
 	d := dot(t, g)
 	for _, want := range []string{"label=\"evil\\n```\\nafter\"", `label="b\nc"`, `label="one\ntwo"`} {
-		if !strings.Contains(d, want) {
-			t.Errorf("dot output missing %q\n%s", want, d)
-		}
+		assert.Contains(t, d, want)
 	}
 }
