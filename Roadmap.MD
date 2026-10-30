@@ -18,7 +18,10 @@
 - Contract tests are a documented requirement for all new adapters.
 
 ### CLI
-- `graph-go serve` (default), `graph-go scan` (JSON output, `--health`, `--pretty`), `graph-go demo`, `graph-go version`, `graph-go --health-check`.
+- `graph-go serve` (default), `graph-go scan`, `graph-go validate`, `graph-go demo`, `graph-go version`, `graph-go --health-check`.
+- `scan --format json|mermaid|markdown|dot` (`--health`, `--pretty`); `graph-go export` is an alias. Diagrams nest namespaces/databases as subgraphs and are deterministic ([#19](https://github.com/guilherme-grimm/graph-go/issues/19)).
+- `validate` reports every config problem: missing fields, unknown types, unknown keys `serve` would ignore, extra YAML documents ([#17](https://github.com/guilherme-grimm/graph-go/issues/17)).
+- Startup report: once the first discovery finishes, `serve` prints a ✓/✗ line per adapter to stderr with what it found or why it failed ([#16](https://github.com/guilherme-grimm/graph-go/issues/16)).
 - Global flags: `--config`, `--log-level`, `--log-format`.
 - Single self-contained binary with the SPA bundle embedded (`webui` via `//go:embed`).
 
@@ -29,7 +32,7 @@
 - `stdout` reserved for machine-readable data; all logs go to **stderr**.
 
 ### Orchestrator Support
-- **Kubernetes** (Phase 1) — informer-based real-time watching of Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services. Debounced event handling (2s window). In-cluster → kubeconfig fallback; `New` returns `(nil, nil)` if no cluster, so discovery silently no-ops.
+- **Kubernetes** (Phase 1) — informer-based real-time watching of Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services. Debounced event handling (2s window). In-cluster → kubeconfig fallback; `New` returns `(nil, nil)` if no cluster, so discovery silently no-ops; a configured cluster that doesn't answer `/version` within 5s is reported as unavailable instead of hanging discovery.
 - Docker stays the core discovery source; Docker events drive live topology changes.
 - Scope: read-only discovery against the current user's context.
 
@@ -102,20 +105,8 @@ burning tokens grepping compose files and guessing.
 
 ## Enablers (Confirmed, pre- or intra-milestone)
 
-### Startup Report
-- On `graph-go serve`, print a structured connection summary to `stderr`:
-  ```
-  graph-go: discovery complete
-    ✓ postgres (mydb) — 12 tables, 8 edges
-    ✓ redis (cache) — 3 keyspaces
-    ✗ elasticsearch (search) — connection refused: dial tcp 127.0.0.1:9200
-  ```
-
-### CLI (`graph-go` command)
-- Export subcommand: `graph-go export --output mermaid|dot|json`
-  - `stdout` for data output (pipeable), `stderr` for all logs and status
-- Validate subcommand: `graph-go validate` — parse and schema-check config, report missing fields
-  - `graph-go validate --connect` — additionally test connectivity per service, no server started
+### `graph-go validate --connect`
+- Additionally test connectivity per service, no server started ([#18](https://github.com/guilherme-grimm/graph-go/issues/18)).
 
 ### Kubernetes Adapter Bridging
 - Classify pods by image; connect adapters to the databases running inside pods.
@@ -162,19 +153,16 @@ burning tokens grepping compose files and guessing.
 
 Ordered by dependency and DX impact — earlier items unblock later ones.
 
-1. **Startup report** — immediately improves DX, low effort; builds on the zap logger already threaded through.
-2. **`graph-go validate`** — unblocks safer config iteration; shares code with startup report's per-adapter probe.
-3. **CLI export (`graph-go export`)** — unlocks CI/docs use cases; `scan` JSON already done, add mermaid + dot.
-4. **MCP server over topology (M3, first slice)** — thin on top of `scan --format=json`; independently launchable, grows tools as M1/M2 land.
-5. **K8s adapter bridging** — closes the gap between K8s topology and adapter-bridged discovery; required before M1 is meaningful inside a cluster.
-6. **M1 — Data flow** — adapter-stats polling + entry-point heuristic; Grafana cross-check is the acceptance bar.
-7. **M2 — Stress testing** — load driver + live health push, paired with the M1 view.
-8. **Message broker adapters (Phase 1)** — after visualization (decision 2026-07-09); Kafka first, structural topology.
-9. **Message broker flow inference (Phase 2)** — feeds the M1 flow view.
-10. **Graph persistence** — usability for teams over time.
-11. **Multi-region visualization** — scale-out usability.
-12. **Alert configuration per node** — closes the monitoring loop.
-13. **Polish phase**: hot reload, bearer token auth.
+1. **MCP server over topology (M3, first slice)** — thin on top of `scan --format=json`; independently launchable, grows tools as M1/M2 land.
+2. **K8s adapter bridging** — closes the gap between K8s topology and adapter-bridged discovery; required before M1 is meaningful inside a cluster.
+3. **M1 — Data flow** — adapter-stats polling + entry-point heuristic; Grafana cross-check is the acceptance bar.
+4. **M2 — Stress testing** — load driver + live health push, paired with the M1 view.
+5. **Message broker adapters (Phase 1)** — after visualization (decision 2026-07-09); Kafka first, structural topology.
+6. **Message broker flow inference (Phase 2)** — feeds the M1 flow view.
+7. **Graph persistence** — usability for teams over time.
+8. **Multi-region visualization** — scale-out usability.
+9. **Alert configuration per node** — closes the monitoring loop.
+10. **Polish phase**: hot reload, bearer token auth.
 
 ---
 

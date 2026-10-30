@@ -87,7 +87,7 @@ docker run -d -p 8080:8080 \
 >
 > graph-go only reads from the Docker API (list, inspect, events). `:ro` does not restrict API calls, though: anything that can reach the socket can control the daemon. For least privilege, put a read-only API proxy such as [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) in front of the socket and point graph-go at it with `DOCKER_HOST=tcp://<proxy>:2375` (no socket mount or `--group-add` needed). [`docker-compose.demo.yml`](docker-compose.demo.yml) shows a working setup.
 
-Open **http://localhost:8080**. Auto-discovery handles Docker containers and (when a kubeconfig or in-cluster service account is present) Kubernetes resources without any config file.
+Open **http://localhost:8080**. Auto-discovery handles Docker containers and (when a kubeconfig or in-cluster service account points at a reachable cluster) Kubernetes resources without any config file.
 
 For services that live outside Docker/Kubernetes (remote databases, managed cloud services), mount a config file — see [Configuration](#configuration).
 
