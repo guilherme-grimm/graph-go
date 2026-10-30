@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -61,6 +62,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newServeCmd())
 	cmd.AddCommand(newDemoCmd())
 	cmd.AddCommand(newScanCmd())
+	cmd.AddCommand(newValidateCmd())
 	cmd.AddCommand(newVersionCmd())
 
 	return cmd
@@ -87,7 +89,14 @@ func runServe(configPath, logLevel, logFormat string) error {
 
 	applyServerEnv(&cfg.Server)
 
-	srv, cleanup := server.NewServer(cfg, logger, catalog.Default())
+	// The ✓/✗ table is for people; JSON log consumers already get one
+	// structured line per adapter registration.
+	var report io.Writer = os.Stderr
+	if logFormat == "json" {
+		report = nil
+	}
+
+	srv, cleanup := server.NewServer(cfg, logger, catalog.Default(), report)
 	done := make(chan bool, 1)
 
 	go gracefulShutdown(srv, cleanup, logger, done)

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -27,7 +28,11 @@ type Server struct {
 //
 // cat supplies the adapters this binary supports; build it at the composition
 // root (see internal/adapters/catalog).
-func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (*http.Server, func()) {
+//
+// When report is non-nil, a per-adapter ✓/✗ summary is written to it once the
+// first full discovery finishes. That runs in the background so a slow
+// adapter does not delay the listener; it also warms the graph cache.
+func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog, report io.Writer) (*http.Server, func()) {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -44,7 +49,20 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 		allowedOrigins = []string{"http://localhost:3000", "http://localhost:5173"}
 	}
 
-	reg, discoverers, svcSync, regCleanup := buildRegistry(cfg, logger, cat)
+	reg, discoverers, svcSync, initial, regCleanup := buildRegistry(cfg, logger, cat)
+
+	if report != nil {
+		go func() {
+			g, err := reg.DiscoverAll()
+			if err != nil {
+				logger.Warnw("startup report skipped: discovery failed", "err", err)
+				return
+			}
+			if err := writeStartupReport(report, startupReport(initial, g)); err != nil {
+				logger.Warnw("startup report write failed", "err", err)
+			}
+		}()
+	}
 
 	// Start a Watch() goroutine for each discoverer. Topology-oriented
 	// discoverers refresh their topology on each callback; adapter-oriented

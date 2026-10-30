@@ -113,8 +113,9 @@ Open **http://localhost:8080**. Other platforms on the [Releases page](https://g
 | Command | What it does |
 |---|---|
 | `graph-go demo` | Boot the seeded Docker Compose demo stack from the repository and stream its output in the foreground. |
-| `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). |
-| `graph-go scan` | Run discovery once and emit the graph as JSON to stdout. Useful for piping into `jq`, CI checks, or one-shot exports. |
+| `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). Once the first discovery finishes it prints a ✓/✗ line per adapter to stderr, with what it found or why it failed (skipped with `--log-format json`). |
+| `graph-go scan` | Run discovery once and emit the graph to stdout. `--format json` (default) for piping into `jq` or CI checks; `mermaid`, `markdown` (Mermaid in a fenced block, renders on GitHub) or `dot` (Graphviz) for diagrams. `graph-go export` is an alias. |
+| `graph-go validate` | Check the config file and exit non-zero if it's invalid. Reports every missing field, unknown connection type, and unknown key (which `serve` silently ignores). No server is started. |
 | `graph-go version` | Print version, commit, and build date. |
 | `graph-go --health-check` | Hit local `/health` and exit `0`/`1`. Used by the container `HEALTHCHECK`; not for interactive use. |
 
@@ -124,7 +125,7 @@ Typical flow:
 
 1. `graph-go demo` for a realistic local walkthrough.
 2. `graph-go serve` to run against your own infrastructure.
-3. `graph-go scan` for one-shot automation, exports, or CI checks.
+3. `graph-go scan` for one-shot automation, exports, or CI checks — e.g. `graph-go export --format markdown --log-level=warn > ARCHITECTURE.md` for a diagram that renders on GitHub.
 
 ---
 
@@ -481,9 +482,10 @@ git push --tags
 - [x] Kubernetes orchestrator (Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services)
 - [x] Informer-based real-time K8s watching with debounce
 - [x] Swimlane layout with namespace group containers
+- [x] Large-cluster mode: namespace collapse, filters, auto-swimlane, batched health updates (v0.4.0-rc.1)
 - [ ] K8s adapter bridging (classify pods by image, connect adapters to databases in pods)
 - [ ] Flow observability (real-time data flow visualization)
-- [ ] Integrated stress trigger (k6 with real-time impact visualization)
+- [ ] Integrated stress trigger (load generation with real-time impact visualization)
 - [ ] Kafka adapter
 - [ ] Additional orchestrators (ECS, Nomad)
 - [ ] Graph persistence (save/load views)
