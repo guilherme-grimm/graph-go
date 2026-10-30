@@ -27,7 +27,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 | `internal/adapters` | The `Adapter` interface, factory registry, `Registry` (the aggregator), cache, singleflight, topology merge. |
 | `internal/adapters/{postgres,mongodb,mysql,redis,elasticsearch,s3,http}` | One package per datastore. Listed in `catalog.Default()` (ADR-0002). |
 | `internal/adapters/adaptertest` | The contract test suite every adapter must pass. |
-| `internal/graph` | The graph model: `Graph`, `nodes.Node`, `edges.Edge`, `health.Status`. |
+| `internal/graph` | The graph model: `Graph`, `nodes.Node`, `edges.Edge`, `health.Status`. `render/` turns a `Graph` into Mermaid or Graphviz DOT for `scan --format`. |
 | `internal/server` | HTTP server, routes, CORS, WebSocket, registry/bootstrap wiring. |
 | `internal/webui` | Embedded frontend (React build) served as SPA fallback. |
 
@@ -180,7 +180,7 @@ Kubernetes-discovered (topology):
 ## Invariants
 
 - A failing adapter becomes an `unhealthy` service node with its error in `Metadata["error"]` — it never fails the whole `DiscoverAll`.
-- `stdout` is reserved for machine-readable data (`scan` JSON output); all logging goes to `stderr`. (ADR-0001)
+- `stdout` is reserved for machine-readable data (`scan` JSON or diagram output); all logging goes to `stderr`. (ADR-0001)
 - The logger is threaded via constructor, never read from a global. (ADR-0001)
 - Env overrides only populate zero-valued config fields; explicit YAML always wins.
 - `shallowCopyGraph` copies the `Graph` struct but `Nodes`/`Edges` slices share backing arrays with the cached graph — callers must not mutate returned slices in place. (Current callers serialize to JSON immediately.)

@@ -143,3 +143,24 @@ func TestScanHelpOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestExportIsScanAlias(t *testing.T) {
+	root := newRootCmd()
+	cmd, _, err := root.Find([]string{"export"})
+	if err != nil {
+		t.Fatalf("find export: %v", err)
+	}
+	if cmd.Name() != "scan" {
+		t.Errorf("export resolved to %q, want scan", cmd.Name())
+	}
+}
+
+func TestScanFormatUsageListsDiagrams(t *testing.T) {
+	scan := findSubcommand(newRootCmd(), "scan")
+	usage := scan.LocalFlags().Lookup("format").Usage
+	for _, f := range scanFormats {
+		if !strings.Contains(usage, f) {
+			t.Errorf("--format usage %q missing %q", usage, f)
+		}
+	}
+}
