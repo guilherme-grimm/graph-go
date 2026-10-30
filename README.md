@@ -132,7 +132,13 @@ Typical flow:
 
 ## Use with AI agents (MCP)
 
-`graph-go mcp` gives coding agents (Claude Code, Cursor, any MCP client) a deterministic view of your infrastructure, so they stop guessing from compose files and manifests. It runs over stdio and exposes three **read-only** tools:
+`graph-go mcp` gives coding agents (Claude Code, Cursor, any MCP client) a deterministic view of your infrastructure, so they stop guessing from compose files and manifests.
+
+[![Claude Code asking graph-go which databases the demo stack runs, which services use them, and whether anything is unhealthy](./docs/graph-go-mcp.gif)](./docs/graph-go-mcp.mp4)
+
+*A real Claude Code session against `graph-go demo`: one question, graph-go's tools, and an answer built from the live graph, including the backup bucket nothing writes to.*
+
+It runs over stdio and exposes three **read-only** tools:
 
 | Tool | Use it for |
 |---|---|
