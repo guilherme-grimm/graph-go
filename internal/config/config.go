@@ -1,8 +1,12 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"regexp"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
 
@@ -74,48 +78,104 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func (cfg *Config) Validate() error {
-	for i, conn := range cfg.Connections {
-		if conn.Name == "" {
-			return fmt.Errorf("config: connections[%d]: 'name' is required", i)
+// Check reads the config at path and reports every problem it finds instead
+// of stopping at the first one. Unlike Load it rejects unknown keys, so a
+// misspelled or unsupported field is reported rather than silently dropped.
+// The returned error is reserved for failures to read the file at all.
+func Check(path string) ([]error, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: failed to read %s: %w", path, err)
+	}
+
+	var problems []error
+
+	var cfg Config
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
+		var typeErr *yaml.TypeError
+		if !errors.As(err, &typeErr) {
+			// Syntax errors leave nothing reliable to validate.
+			return []error{fmt.Errorf("config: failed to parse %s: %w", path, err)}, nil
 		}
-		if conn.Type == "" {
-			return fmt.Errorf("config: connections[%d] (%s): 'type' is required", i, conn.Name)
-		}
-		switch conn.Type {
-		case "postgres":
-			if conn.DSN == "" {
-				return fmt.Errorf("config: connections[%d] (%s): 'dsn' is required for postgres", i, conn.Name)
-			}
-		case "mongodb":
-			if conn.URI == "" {
-				return fmt.Errorf("config: connections[%d] (%s): 'uri' is required for mongodb", i, conn.Name)
-			}
-		case "s3":
-			if conn.Endpoint == "" && conn.Region == "" {
-				return fmt.Errorf("config: connections[%d] (%s): 'endpoint' or 'region' is required for s3", i, conn.Name)
-			}
-		case "http":
-			if conn.Endpoint == "" {
-				return fmt.Errorf("config: connections[%d] (%s): 'endpoint' is required for http", i, conn.Name)
-			}
-		case "mysql":
-			if conn.DSN == "" {
-				return fmt.Errorf("config: connections[%d] (%s): 'dsn' is required for mysql", i, conn.Name)
-			}
-		case "elasticsearch":
-			if conn.Endpoint == "" {
-				return fmt.Errorf("config: connections[%d] (%s): 'endpoint' is required for elasticsearch", i, conn.Name)
-			}
-		case "redis":
-			if conn.URI == "" && conn.Endpoint == "" {
-				return fmt.Errorf("config: connections[%d] (%s): 'uri' or 'endpoint' is required for redis", i, conn.Name)
-			}
-		default:
-			return fmt.Errorf("config: connections[%d] (%s): unknown type %q", i, conn.Name, conn.Type)
+		// Type errors still decode the rest of the document, so keep going.
+		for _, msg := range typeErr.Errors {
+			problems = append(problems, fmt.Errorf("config: %s", friendlyTypeError(msg)))
 		}
 	}
-	return nil
+
+	return append(problems, cfg.Problems()...), nil
+}
+
+// unknownFieldRe matches yaml.v3's KnownFields message, which names Go types.
+var unknownFieldRe = regexp.MustCompile(`^(line \d+): field (\S+) not found in type \S+$`)
+
+func friendlyTypeError(msg string) string {
+	if m := unknownFieldRe.FindStringSubmatch(msg); m != nil {
+		return fmt.Sprintf("%s: unknown key '%s'", m[1], m[2])
+	}
+	return msg
+}
+
+// Validate returns every problem in cfg joined into one error, or nil.
+func (cfg *Config) Validate() error {
+	return errors.Join(cfg.Problems()...)
+}
+
+// Problems lists every missing required field and unknown connection type.
+func (cfg *Config) Problems() []error {
+	var problems []error
+	for i, conn := range cfg.Connections {
+		if conn.Name == "" {
+			problems = append(problems, fmt.Errorf("config: connections[%d]: 'name' is required", i))
+		}
+		if conn.Type == "" {
+			problems = append(problems, fmt.Errorf("config: connections[%d] (%s): 'type' is required", i, conn.Name))
+			continue
+		}
+		if msg := conn.missingField(); msg != "" {
+			problems = append(problems, fmt.Errorf("config: connections[%d] (%s): %s", i, conn.Name, msg))
+		}
+	}
+	return problems
+}
+
+// missingField returns why e lacks a field its type requires, or "".
+func (e *ConnectionEntry) missingField() string {
+	switch e.Type {
+	case "postgres":
+		if e.DSN == "" {
+			return "'dsn' is required for postgres"
+		}
+	case "mongodb":
+		if e.URI == "" {
+			return "'uri' is required for mongodb"
+		}
+	case "s3":
+		if e.Endpoint == "" && e.Region == "" {
+			return "'endpoint' or 'region' is required for s3"
+		}
+	case "http":
+		if e.Endpoint == "" {
+			return "'endpoint' is required for http"
+		}
+	case "mysql":
+		if e.DSN == "" {
+			return "'dsn' is required for mysql"
+		}
+	case "elasticsearch":
+		if e.Endpoint == "" {
+			return "'endpoint' is required for elasticsearch"
+		}
+	case "redis":
+		if e.URI == "" && e.Endpoint == "" {
+			return "'uri' or 'endpoint' is required for redis"
+		}
+	default:
+		return fmt.Sprintf("unknown type %q", e.Type)
+	}
+	return ""
 }
 
 func (e *ConnectionEntry) ToConnectionConfig() adapters.ConnectionConfig {
