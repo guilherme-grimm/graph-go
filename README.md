@@ -481,9 +481,10 @@ git push --tags
 - [x] Kubernetes orchestrator (Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services)
 - [x] Informer-based real-time K8s watching with debounce
 - [x] Swimlane layout with namespace group containers
+- [x] Large-cluster mode: namespace collapse, filters, auto-swimlane, batched health updates (v0.4.0-rc.1)
 - [ ] K8s adapter bridging (classify pods by image, connect adapters to databases in pods)
 - [ ] Flow observability (real-time data flow visualization)
-- [ ] Integrated stress trigger (k6 with real-time impact visualization)
+- [ ] Integrated stress trigger (load generation with real-time impact visualization)
 - [ ] Kafka adapter
 - [ ] Additional orchestrators (ECS, Nomad)
 - [ ] Graph persistence (save/load views)
