@@ -2,9 +2,12 @@ package mcp
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/guilherme-grimm/graph-go/internal/graph"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
@@ -150,25 +153,34 @@ func largestNamespaces(s *Summary, k int) []string {
 
 // fitNodes shrinks ns, least important first, until encode(ns) fits in
 // maxBytes. It reports whether anything was dropped. encode must produce the
-// whole response, so the cap covers envelope and edges too.
+// whole response as sent (see wireBytes), so the cap covers everything.
 func fitNodes(ns []nodes.Node, maxBytes int, encode func([]nodes.Node) ([]byte, error)) ([]nodes.Node, bool, error) {
-	b, err := encode(ns)
-	if err != nil {
-		return nil, false, err
-	}
-	if len(b) <= maxBytes {
-		return ns, false, nil
-	}
-
 	ranked := slices.Clone(ns)
 	slices.SortStableFunc(ranked, func(a, b nodes.Node) int {
 		return cmp.Or(cmp.Compare(healthRank(a), healthRank(b)), cmp.Compare(a.Id, b.Id))
 	})
-	// Binary search the largest prefix that fits.
-	lo, hi := 0, len(ranked)
+	fitted, dropped, err := fitPrefix(ranked, maxBytes, encode)
+	if err != nil || !dropped {
+		// Nothing dropped: keep the caller's order.
+		return ns, false, err
+	}
+	return fitted, true, nil
+}
+
+// fitPrefix returns the longest prefix of items whose encoding fits in
+// maxBytes, and whether it had to cut anything.
+func fitPrefix[T any](items []T, maxBytes int, encode func([]T) ([]byte, error)) ([]T, bool, error) {
+	b, err := encode(items)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(b) <= maxBytes {
+		return items, false, nil
+	}
+	lo, hi := 0, len(items)
 	for lo < hi {
 		mid := (lo + hi + 1) / 2
-		b, err := encode(ranked[:mid])
+		b, err := encode(items[:mid])
 		if err != nil {
 			return nil, false, err
 		}
@@ -178,7 +190,21 @@ func fitNodes(ns []nodes.Node, maxBytes int, encode func([]nodes.Node) ([]byte, 
 			hi = mid - 1
 		}
 	}
-	return ranked[:lo], true, nil
+	return items[:lo], true, nil
+}
+
+// wireBytes encodes a tool output the way the SDK sends it: the value as
+// structuredContent and again as JSON text content. The byte cap applies to
+// this, not to the bare output.
+func wireBytes(out any) ([]byte, error) {
+	text, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(&sdk.CallToolResult{
+		Content:           []sdk.Content{&sdk.TextContent{Text: string(text)}},
+		StructuredContent: json.RawMessage(text),
+	})
 }
 
 func nodeIndex(g *graph.Graph) map[string]nodes.Node {

@@ -102,14 +102,24 @@ func connect(t *testing.T, start mcp.Starter, opts mcp.Options) *sdk.ClientSessi
 // JSON too so tests can check what the client actually receives.
 func call[T any](t *testing.T, cs *sdk.ClientSession, name string, args map[string]any) (T, string) {
 	t.Helper()
+	out, raw, _ := callSized[T](t, cs, name, args)
+	return out, raw
+}
+
+// callSized also returns the size of the whole result as received: the
+// structured content plus the text content the SDK fills from it.
+func callSized[T any](t *testing.T, cs *sdk.ClientSession, name string, args map[string]any) (T, string, int) {
+	t.Helper()
 	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: name, Arguments: args})
 	require.NoError(t, err)
 	raw, err := json.Marshal(res.StructuredContent)
 	require.NoError(t, err)
 	require.False(t, res.IsError, "tool error: %s", raw)
+	whole, err := json.Marshal(res)
+	require.NoError(t, err)
 	var out T
 	require.NoError(t, json.Unmarshal(raw, &out))
-	return out, string(raw)
+	return out, string(raw), len(whole)
 }
 
 func TestToolsAreExactlyTheReadOnlySet(t *testing.T) {
@@ -194,9 +204,9 @@ func TestByteCapKeepsTheMostImportantNodes(t *testing.T) {
 	const capBytes = 8 << 10
 	cs := connect(t, bigStarter(600), mcp.Options{MaxResponseBytes: capBytes})
 
-	out, raw := call[mcp.TopologyOutput](t, cs, "get_topology", map[string]any{"detail": "full"})
+	out, _, whole := callSized[mcp.TopologyOutput](t, cs, "get_topology", map[string]any{"detail": "full"})
 	assert.True(t, out.Truncated)
-	assert.LessOrEqual(t, len(raw), capBytes)
+	assert.LessOrEqual(t, whole, capBytes, "the cap bounds the whole result, text content included")
 	require.NotEmpty(t, out.Nodes)
 	assert.Equal(t, "k8s:pod:beta/broken", out.Nodes[0].Id, "unhealthy nodes survive the cap first")
 	assert.Less(t, len(out.Nodes), 601)
@@ -250,4 +260,26 @@ func TestEmptyDiscoveryIsAnAnswer(t *testing.T) {
 	assert.Empty(t, out.Nodes)
 	assert.Contains(t, out.Hint, "Docker")
 	assert.Contains(t, out.Hint, "stderr")
+}
+
+func TestFindNodesRespectsTheByteCap(t *testing.T) {
+	const capBytes = 4 << 10
+	long := strings.Repeat("n", 400)
+	cs := connect(t, func() (adapters.Registry, func()) {
+		reg := adapters.NewRegistry(zap.NewNop().Sugar())
+		var ns []nodes.Node
+		for i := range 50 {
+			ns = append(ns, nodes.Node{Id: fmt.Sprintf("svc-%02d-%s", i, long), Type: "service", Name: fmt.Sprintf("svc-%02d-%s", i, long)})
+		}
+		reg.SetTopology("kubernetes", ns, nil)
+		return reg, func() {}
+	}, mcp.Options{MaxResponseBytes: capBytes})
+
+	out, _, whole := callSized[mcp.FindOutput](t, cs, "find_nodes", map[string]any{"query": "svc", "limit": 50})
+	assert.LessOrEqual(t, whole, capBytes)
+	assert.Equal(t, 50, out.Total)
+	assert.NotEmpty(t, out.Matches)
+	assert.Less(t, len(out.Matches), 50)
+	assert.Equal(t, "svc-00-"+long, out.Matches[0].Name, "the best matches are kept")
+	assert.Contains(t, out.Hint, "size cap")
 }

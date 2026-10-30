@@ -3,7 +3,6 @@ package mcp
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -152,21 +151,23 @@ func (t *tools) getTopology(_ context.Context, _ *sdk.CallToolRequest, in Topolo
 		}
 	}
 
-	fitted, dropped, err := fitNodes(selected, t.maxBytes, func(ns []nodes.Node) ([]byte, error) {
+	// Build the response inside the measurement, cap hint included, so what
+	// is measured is exactly what is sent.
+	build := func(ns []nodes.Node) TopologyOutput {
 		o := out
 		o.Nodes, o.Edges = nonNil(ns), edgesWithin(g.Edges, ns)
-		return json.Marshal(o)
-	})
+		if len(ns) < len(selected) {
+			o.Truncated = true
+			o.Hint = strings.TrimSpace(o.Hint + fmt.Sprintf(" Response size cap reached: returned %d of %d selected nodes, "+
+				"unhealthy and degraded first. Narrow the filters to see the rest.", len(ns), len(selected)))
+		}
+		return o
+	}
+	fitted, _, err := fitNodes(selected, t.maxBytes, func(ns []nodes.Node) ([]byte, error) { return wireBytes(build(ns)) })
 	if err != nil {
 		return nil, TopologyOutput{}, err
 	}
-	out.Nodes, out.Edges = nonNil(fitted), edgesWithin(g.Edges, fitted)
-	if dropped {
-		out.Truncated = true
-		out.Hint = strings.TrimSpace(out.Hint + fmt.Sprintf(" Response size cap reached: returned %d of %d selected nodes, "+
-			"unhealthy and degraded first. Narrow the filters to see the rest.", len(fitted), len(selected)))
-	}
-	return nil, out, nil
+	return nil, build(fitted), nil
 }
 
 func nonNil(ns []nodes.Node) []nodes.Node {
@@ -230,21 +231,21 @@ func (t *tools) getNode(_ context.Context, _ *sdk.CallToolRequest, in NodeInput)
 		}
 	}
 
-	fitted, dropped, err := fitNodes(neighbors, t.maxBytes, func(ns []nodes.Node) ([]byte, error) {
+	build := func(ns []nodes.Node) NodeOutput {
 		o := out
 		o.Neighbors, o.Edges = nonNil(ns), incidentTo(incident, in.ID, ns)
-		return json.Marshal(o)
-	})
+		if len(ns) < len(neighbors) {
+			o.Truncated = true
+			o.Hint = fmt.Sprintf("Response size cap reached: returned %d of %d neighbours, unhealthy and degraded first. "+
+				"Use get_topology with filters to see the rest.", len(ns), len(neighbors))
+		}
+		return o
+	}
+	fitted, _, err := fitNodes(neighbors, t.maxBytes, func(ns []nodes.Node) ([]byte, error) { return wireBytes(build(ns)) })
 	if err != nil {
 		return nil, NodeOutput{}, err
 	}
-	out.Neighbors, out.Edges = nonNil(fitted), incidentTo(incident, in.ID, fitted)
-	if dropped {
-		out.Truncated = true
-		out.Hint = fmt.Sprintf("Response size cap reached: returned %d of %d neighbours, unhealthy and degraded first. "+
-			"Use get_topology with filters to see the rest.", len(fitted), len(neighbors))
-	}
-	return nil, out, nil
+	return nil, build(fitted), nil
 }
 
 // incidentTo keeps the edges between id and the kept neighbours.
@@ -319,17 +320,32 @@ func (t *tools) findNodes(_ context.Context, _ *sdk.CallToolRequest, in FindInpu
 		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.n.Name, b.n.Name), cmp.Compare(a.n.Id, b.n.Id))
 	})
 	out.Total = len(hits)
+	var matches []Match
 	for _, h := range hits[:min(limit, len(hits))] {
 		m := Match{ID: h.n.Id, Name: h.n.Name, Type: h.n.Type, Health: healthOf(h.n)}
 		if ns := namespaceOf(h.n); ns != noneNamespace {
 			m.Namespace = ns
 		}
-		out.Matches = append(out.Matches, m)
+		matches = append(matches, m)
 	}
 	if out.Total == 0 {
 		out.Hint = "No node name or id contains that text. get_topology without filters shows the namespaces and types that exist."
+		return nil, out, nil
 	}
-	return nil, out, nil
+
+	build := func(ms []Match) FindOutput {
+		o := out
+		o.Matches = append([]Match{}, ms...)
+		if len(ms) < len(matches) {
+			o.Hint = fmt.Sprintf("Response size cap reached: returned %d of %d matches, best first. Use a longer query.", len(ms), len(matches))
+		}
+		return o
+	}
+	fitted, _, err := fitPrefix(matches, t.maxBytes, func(ms []Match) ([]byte, error) { return wireBytes(build(ms)) })
+	if err != nil {
+		return nil, FindOutput{}, err
+	}
+	return nil, build(fitted), nil
 }
 
 // matchScore ranks a node for a lowercase query, as the UI search does:
