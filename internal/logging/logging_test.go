@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/guilherme-grimm/graph-go/internal/logging"
 )
 
@@ -14,9 +17,7 @@ import (
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	orig := os.Stderr
 	os.Stderr = w
 	defer func() { os.Stderr = orig }()
@@ -24,9 +25,7 @@ func captureStderr(t *testing.T, fn func()) string {
 	fn()
 	w.Close()
 	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return string(out)
 }
 
@@ -35,24 +34,16 @@ func TestStacktraceOnlyOnErrors(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			out := captureStderr(t, func() {
 				l, err := logging.New("info", format)
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, err)
 				l.Warnw("routine warning")
 				l.Errorw("real error")
 				_ = l.Sync()
 			})
 
 			warn, errLine, ok := strings.Cut(out, "real error")
-			if !ok {
-				t.Fatalf("error line missing:\n%s", out)
-			}
-			if strings.Contains(warn, "logging_test.TestStacktraceOnlyOnErrors") {
-				t.Errorf("warning carries a stack trace:\n%s", warn)
-			}
-			if !strings.Contains(errLine, "logging_test.TestStacktraceOnlyOnErrors") {
-				t.Errorf("error lost its stack trace:\n%s", errLine)
-			}
+			require.True(t, ok, "error line missing:\n%s", out)
+			assert.NotContains(t, warn, "logging_test.TestStacktraceOnlyOnErrors", "warning carries a stack trace")
+			assert.Contains(t, errLine, "logging_test.TestStacktraceOnlyOnErrors", "error lost its stack trace")
 		})
 	}
 }
