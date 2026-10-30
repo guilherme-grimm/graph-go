@@ -18,7 +18,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 
 | Package | Role |
 |---|---|
-| `cmd/app` | CLI entrypoint (cobra). Subcommands: `serve`, `scan`, `demo`, `version`, `--health-check`. Logger construction + `defer Sync()`. |
+| `cmd/app` | CLI entrypoint (cobra). Subcommands: `serve`, `scan`, `validate`, `demo`, `version`, `--health-check`. Logger construction + `defer Sync()`. |
 | `internal/config` | YAML config load + validate. `Config`, `ConnectionEntry`, Docker/K8s toggles. Env overrides populate zero fields only. |
 | `internal/logging` | The single zap construction site (`New(level, format)`). See ADR-0001. |
 | `internal/discovery` | The `Discoverer` contract + `ServiceInfo`. Backends live in subpackages. |

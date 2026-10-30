@@ -115,6 +115,7 @@ Open **http://localhost:8080**. Other platforms on the [Releases page](https://g
 | `graph-go demo` | Boot the seeded Docker Compose demo stack from the repository and stream its output in the foreground. |
 | `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). |
 | `graph-go scan` | Run discovery once and emit the graph to stdout. `--format json` (default) for piping into `jq` or CI checks; `mermaid`, `markdown` (Mermaid in a fenced block, renders on GitHub) or `dot` (Graphviz) for diagrams. `graph-go export` is an alias. |
+| `graph-go validate` | Check the config file and exit non-zero if it's invalid. Reports every missing field, unknown connection type, and unknown key (which `serve` silently ignores). No server is started. |
 | `graph-go version` | Print version, commit, and build date. |
 | `graph-go --health-check` | Hit local `/health` and exit `0`/`1`. Used by the container `HEALTHCHECK`; not for interactive use. |
 
