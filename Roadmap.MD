@@ -9,10 +9,10 @@
 ## Done
 
 ### Adapters
-- PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, S3/MinIO, HTTP adapters.
+- PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, S3 (and S3-compatible stores), HTTP adapters.
 
 ### Integration & Contract Tests
-- Integration tests using `testcontainers-go` for all container-backed adapters (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, S3/MinIO). The HTTP adapter has no tests yet — see Deferred.
+- Integration tests using `testcontainers-go` for all container-backed adapters (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, S3 via RustFS). The HTTP adapter runs the contract suite against an `httptest.Server` ([#13](https://github.com/guilherme-grimm/graph-go/issues/13)).
 - Shared contract test suite (`adaptertest.RunContractTests`) — validates Adapter interface compliance.
 - Build tag `//go:build integration` keeps tests out of `go test ./...`; CI runs them separately.
 - Contract tests are a documented requirement for all new adapters.
@@ -32,6 +32,15 @@
 - **Kubernetes** (Phase 1) — informer-based real-time watching of Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services. Debounced event handling (2s window). In-cluster → kubeconfig fallback; `New` returns `(nil, nil)` if no cluster, so discovery silently no-ops.
 - Docker stays the core discovery source; Docker events drive live topology changes.
 - Scope: read-only discovery against the current user's context.
+
+### Explicit Adapter Registration
+- `init()` self-registration replaced by an explicit `Catalog` built at the composition root ([#14](https://github.com/guilherme-grimm/graph-go/issues/14), [ADR-0002](docs/adr/0002-explicit-adapter-registration.md)).
+
+### Large-cluster performance (v0.4.0-rc.1)
+- WebSocket sends one `health_batch` diff per tick instead of a frame per node; stale Docker services are pruned (`Registry.Unregister`).
+- UI: namespace collapse, name/namespace filters, auto-switch to swimlane above 300 nodes, viewport virtualization, filter state in the URL.
+- `hack/scale/` harness (kind + KWOK, Docker container generator, `measure.mjs`). At 5k pods: first render 8.3s → 0.43s, heap 1.1GB → 16MB.
+- Next: server-side namespace filtering (rc.2).
 
 ### Delivery
 - Single Docker image on `ghcr.io/guilherme-grimm/graph-go`; cross-platform binaries via GoReleaser on tag pushes.
@@ -113,11 +122,6 @@ burning tokens grepping compose files and guessing.
 - Bridges Docker-style adapter discovery into the K8s-topology graph (currently the two run in parallel but don't cross-link).
 - Required before M1 flow is meaningful inside a cluster.
 
-### Explicit Adapter Registration (no `init()`)
-- Replace the 7 `func init()` self-registrations + blank imports with explicit
-  registration at the composition root ([#14](https://github.com/guilherme-grimm/graph-go/issues/14)).
-- Also gives M1/M3 a clean seam for wiring adapters programmatically.
-
 ---
 
 ## Post-V1 (Confirmed direction, sequenced after the milestones)
@@ -146,10 +150,6 @@ burning tokens grepping compose files and guessing.
 - Re-merge YAML config + Docker discovery and re-register adapters without restart.
 - Mirrors the existing Docker event-watcher pattern in `internal/discovery/docker/events.go`.
 
-### HTTP Adapter Tests
-- `internal/adapters/http/` has no test coverage today ([#13](https://github.com/guilherme-grimm/graph-go/issues/13)).
-- Run the shared contract suite (`adaptertest.RunContractTests`) against an `httptest.Server`; no container needed.
-
 ### Bearer Token Auth
 - Optional static token via `GRAPHGO_TOKEN` env var.
 - If set: all `/api/*` and `/websocket` routes require `Authorization: Bearer <token>`.
@@ -166,16 +166,15 @@ Ordered by dependency and DX impact — earlier items unblock later ones.
 2. **`graph-go validate`** — unblocks safer config iteration; shares code with startup report's per-adapter probe.
 3. **CLI export (`graph-go export`)** — unlocks CI/docs use cases; `scan` JSON already done, add mermaid + dot.
 4. **MCP server over topology (M3, first slice)** — thin on top of `scan --format=json`; independently launchable, grows tools as M1/M2 land.
-5. **Explicit adapter registration (#14)** — kills `init()` side effects; clean seam before flow work touches the adapters.
-6. **K8s adapter bridging** — closes the gap between K8s topology and adapter-bridged discovery; required before M1 is meaningful inside a cluster.
-7. **M1 — Data flow** — adapter-stats polling + entry-point heuristic; Grafana cross-check is the acceptance bar.
-8. **M2 — Stress testing** — load driver + live health push, paired with the M1 view.
-9. **Message broker adapters (Phase 1)** — after visualization (decision 2026-07-09); Kafka first, structural topology.
-10. **Message broker flow inference (Phase 2)** — feeds the M1 flow view.
-11. **Graph persistence** — usability for teams over time.
-12. **Multi-region visualization** — scale-out usability.
-13. **Alert configuration per node** — closes the monitoring loop.
-14. **Polish phase**: hot reload, bearer token auth, HTTP adapter tests (#13).
+5. **K8s adapter bridging** — closes the gap between K8s topology and adapter-bridged discovery; required before M1 is meaningful inside a cluster.
+6. **M1 — Data flow** — adapter-stats polling + entry-point heuristic; Grafana cross-check is the acceptance bar.
+7. **M2 — Stress testing** — load driver + live health push, paired with the M1 view.
+8. **Message broker adapters (Phase 1)** — after visualization (decision 2026-07-09); Kafka first, structural topology.
+9. **Message broker flow inference (Phase 2)** — feeds the M1 flow view.
+10. **Graph persistence** — usability for teams over time.
+11. **Multi-region visualization** — scale-out usability.
+12. **Alert configuration per node** — closes the monitoring loop.
+13. **Polish phase**: hot reload, bearer token auth.
 
 ---
 
