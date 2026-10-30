@@ -42,11 +42,12 @@ export function useWebSocket() {
     [applyHealthBatch, queryClient]
   );
 
+  // Reconnect timers call through this ref so connect can schedule itself.
+  const connectRef = useRef<() => void>(() => {});
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     isDisconnectingRef.current = false;
-    setStatus('connecting');
 
     try {
       const ws = new WebSocket(WS_URL);
@@ -77,7 +78,13 @@ export function useWebSocket() {
           RECONNECT_DELAYS[Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS.length - 1)];
         reconnectAttemptRef.current++;
 
-        reconnectTimeoutRef.current = setTimeout(connect, delay);
+        reconnectTimeoutRef.current = setTimeout(() => {
+          // A stale timer (e.g. two sockets closing under StrictMode) must not
+          // flip an open connection back to "connecting".
+          if (wsRef.current?.readyState === WebSocket.OPEN) return;
+          setStatus('connecting');
+          connectRef.current();
+        }, delay);
       };
 
       ws.onerror = () => {
@@ -85,10 +92,14 @@ export function useWebSocket() {
       };
 
       wsRef.current = ws;
-    } catch (err) {
+    } catch {
       setStatus('error');
     }
   }, [handleMessage]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     isDisconnectingRef.current = true;
@@ -103,6 +114,10 @@ export function useWebSocket() {
   }, []);
 
   useEffect(() => {
+    // connect only sets state synchronously when the WebSocket constructor
+    // throws (a malformed URL; WS_URL comes from window.location), and showing
+    // that error at once on mount is intended. Every other update is async.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     connect();
     return disconnect;
   }, [connect, disconnect]);

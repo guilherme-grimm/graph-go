@@ -484,8 +484,13 @@ function GraphCanvasInner({
   const { savedPositions, savePosition, clearLayout } = useLayoutPersistence(graph, layoutMode);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [justSavedNodeId, setJustSavedNodeId] = useState<string | null>(null);
-  const prevLayoutModeRef = useRef(layoutMode);
-  const transitionTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Layout transition: start it during render when layoutMode changes, so the
+  // fade begins on the same frame as the new layout.
+  const [transitionMode, setTransitionMode] = useState(layoutMode);
+  if (transitionMode !== layoutMode) {
+    setTransitionMode(layoutMode);
+    setIsTransitioning(true);
+  }
 
   const graphIsEmpty = graph?.nodes?.length === 0;
 
@@ -531,19 +536,16 @@ function GraphCanvasInner({
     if (vp) setViewport(vp, { duration: opts.duration });
   }, [setViewport, store]);
 
-  // Layout transition animation — subscribe to layoutMode changes via effect
+  // End the transition and refit. layoutMode is a dependency so a second
+  // switch mid-transition restarts the timer.
   useEffect(() => {
-    if (prevLayoutModeRef.current === layoutMode) return;
-    prevLayoutModeRef.current = layoutMode;
-
-    setIsTransitioning(true);
-    clearTimeout(transitionTimerRef.current);
-    transitionTimerRef.current = setTimeout(() => {
+    if (!isTransitioning) return;
+    const timer = setTimeout(() => {
       setIsTransitioning(false);
       fitView({ duration: 500 });
     }, 100);
-    return () => clearTimeout(transitionTimerRef.current);
-  }, [layoutMode, fitView]);
+    return () => clearTimeout(timer);
+  }, [isTransitioning, layoutMode, fitView]);
 
   // Memo 2: Cheap highlighting — runs on node click, no layout recomputation
   const { flowNodes, flowEdges } = useMemo(() => {

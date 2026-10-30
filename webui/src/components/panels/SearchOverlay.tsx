@@ -49,6 +49,28 @@ export default function SearchOverlay({
     return () => clearTimeout(timer);
   }, [query]);
 
+  // A new debounced query restarts selection and paging. Only an actual
+  // change counts: typing and deleting a character within the debounce
+  // window must not move the keyboard selection.
+  const [prevDebouncedQuery, setPrevDebouncedQuery] = useState(debouncedQuery);
+  if (debouncedQuery !== prevDebouncedQuery) {
+    setPrevDebouncedQuery(debouncedQuery);
+    setSelectedIndex(0);
+    setDisplayLimit(20);
+  }
+
+  // Start fresh each time the overlay opens. Adjusting state during render
+  // (rather than in an effect) avoids a frame showing the previous search.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      setQuery('');
+      setDebouncedQuery('');
+      setSelectedIndex(0);
+    }
+  }
+
   const { results, totalMatchCount } = useMemo(() => {
     if (!graph?.nodes || !debouncedQuery.trim()) {
       return { results: [] as GraphNode[], totalMatchCount: 0 };
@@ -83,21 +105,12 @@ export default function SearchOverlay({
   // Focus input when opening
   useEffect(() => {
     if (isOpen) {
-      setQuery('');
-      setDebouncedQuery('');
-      setSelectedIndex(0);
       // Small delay to ensure animation doesn't conflict
       requestAnimationFrame(() => {
         inputRef.current?.focus();
       });
     }
   }, [isOpen]);
-
-  // Reset selection and display limit when query changes
-  useEffect(() => {
-    setSelectedIndex(0);
-    setDisplayLimit(20);
-  }, [debouncedQuery]);
 
   // Scroll selected item into view
   useEffect(() => {

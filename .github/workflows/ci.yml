@@ -73,6 +73,10 @@ jobs:
         working-directory: webui
         run: npm ci
 
+      - name: Lint
+        working-directory: webui
+        run: npm run lint
+
       - name: Build
         working-directory: webui
         run: npm run build

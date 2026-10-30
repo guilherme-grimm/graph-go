@@ -5,9 +5,9 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
-export interface GraphResponse extends ApiResponse<Graph> {}
+export type GraphResponse = ApiResponse<Graph>;
 
-export interface NodeResponse extends ApiResponse<GraphNode> {}
+export type NodeResponse = ApiResponse<GraphNode>;
 
 export interface HealthResponse {
   status: 'ok' | 'degraded' | 'error';
