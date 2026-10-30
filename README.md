@@ -114,7 +114,7 @@ Open **http://localhost:8080**. Other platforms on the [Releases page](https://g
 |---|---|
 | `graph-go demo` | Boot the seeded Docker Compose demo stack from the repository and stream its output in the foreground. |
 | `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). |
-| `graph-go scan` | Run discovery once and emit the graph as JSON to stdout. Useful for piping into `jq`, CI checks, or one-shot exports. |
+| `graph-go scan` | Run discovery once and emit the graph to stdout. `--format json` (default) for piping into `jq` or CI checks; `mermaid`, `markdown` (Mermaid in a fenced block, renders on GitHub) or `dot` (Graphviz) for diagrams. `graph-go export` is an alias. |
 | `graph-go version` | Print version, commit, and build date. |
 | `graph-go --health-check` | Hit local `/health` and exit `0`/`1`. Used by the container `HEALTHCHECK`; not for interactive use. |
 
@@ -124,7 +124,7 @@ Typical flow:
 
 1. `graph-go demo` for a realistic local walkthrough.
 2. `graph-go serve` to run against your own infrastructure.
-3. `graph-go scan` for one-shot automation, exports, or CI checks.
+3. `graph-go scan` for one-shot automation, exports, or CI checks — e.g. `graph-go export --format markdown --log-level=warn > ARCHITECTURE.md` for a diagram that renders on GitHub.
 
 ---
 
