@@ -224,7 +224,7 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 		for _, e := range snapshot {
 			n, edg, err := e.adapter.Discover()
 			if err != nil {
-				r.logger.Warnw("adapter discover failed", "adapter", e.name, "err", err)
+				r.logger.Warnw("adapter discover failed", "adapter", e.name, "err", redact.String(err.Error()))
 				allNodes = append(allNodes, nodes.Node{
 					Id:       fmt.Sprintf("service-%s", e.name),
 					Type:     e.connType,

@@ -2,12 +2,14 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
@@ -115,4 +117,33 @@ func TestPlural(t *testing.T) {
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, plural(tt.n, tt.noun), "plural(%d, %q)", tt.n, tt.noun)
 	}
+}
+
+// A connect error that echoes a connection string must not leak through the
+// startup report or the registration-failure log.
+func TestStartupReportAndLogsRedactConnectErrors(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	logger := zap.New(core).Sugar()
+	cat := adapters.NewCatalog(map[string]adapters.AdapterConstructor{
+		"mysql": func(*zap.SugaredLogger) adapters.Adapter {
+			return &scriptedAdapter{connectErr: errors.New("dial mysql://root:hunter2@db:3306/shop: refused")}
+		},
+	})
+	reg := adapters.NewRegistry(logger)
+	res := newServiceSync(reg, cat, nil, logger).apply([]discovery.ServiceInfo{
+		{Name: "shop-db", Type: "mysql", Source: "docker"},
+	}, "")
+	g, err := reg.DiscoverAll()
+	require.NoError(t, err)
+
+	var out strings.Builder
+	require.NoError(t, writeStartupReport(&out, startupReport(res, g)))
+	assert.NotContains(t, out.String(), "hunter2")
+	assert.Contains(t, out.String(), "mysql://root:***@db:3306/shop")
+
+	for _, e := range logs.All() {
+		// ContextMap renders error fields as text, so a raw error is caught too.
+		assert.NotContains(t, fmt.Sprint(e.ContextMap()), "hunter2", "log %q", e.Message)
+	}
+	require.NotZero(t, logs.FilterMessage("adapter register failed").Len())
 }

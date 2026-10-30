@@ -31,6 +31,10 @@ func TestString(t *testing.T) {
 		{"aws env assignment masked", "AWS_SECRET_ACCESS_KEY=abc/def", "AWS_SECRET_ACCESS_KEY=***"},
 		{"github token env masked", "GITHUB_TOKEN: ghp_x1", "GITHUB_TOKEN: ***"},
 		{"plain words untouched", "tokens: 5, passwords are hashed", "tokens: 5, passwords are hashed"},
+		{"empty username url", "redis://:hunter2@cache:6379/0", "redis://:***@cache:6379/0"},
+		{"double-quoted value with spaces", `PASSWORD="two words" next=1`, `PASSWORD="***" next=1`},
+		{"single-quoted value with spaces", `password='two words' next=1`, `password='***' next=1`},
+		{"quoted env assignment", `DB_PASSWORD="a b c"`, `DB_PASSWORD="***"`},
 		{"pgx connect error keeps user and db", "failed to connect to `user=postgres database=basics`: lookup db", "failed to connect to `user=postgres database=basics`: lookup db"},
 	}
 	for _, tt := range tests {
@@ -68,4 +72,25 @@ func TestMapMasksSensitiveKeysAndCopies(t *testing.T) {
 
 func TestMapNil(t *testing.T) {
 	assert.Nil(t, redact.Map(nil))
+}
+
+func TestPrefixedKeysAreSensitive(t *testing.T) {
+	for _, k := range []string{"password", "POSTGRES_PASSWORD", "db.password", "redis-token", "AWS_SECRET_ACCESS_KEY", "apikey", "Api_Key"} {
+		assert.True(t, redact.IsSensitiveKey(k), k)
+	}
+	for _, k := range []string{"env_keys", "tokens", "passwords", "endpoint", "keyspace", "max_tokens"} {
+		assert.False(t, redact.IsSensitiveKey(k), k)
+	}
+
+	out := redact.Map(map[string]any{"POSTGRES_PASSWORD": "hunter2", "labels": map[string]string{"app.token": "t"}})
+	assert.Equal(t, redact.Mask, out["POSTGRES_PASSWORD"])
+	assert.Equal(t, map[string]string{"app.token": redact.Mask}, out["labels"])
+}
+
+func TestValueRedactsSliceOfMaps(t *testing.T) {
+	in := []map[string]any{{"password": "hunter2", "note": "token=abc"}}
+	out := redact.Value(in).([]map[string]any)
+	assert.Equal(t, redact.Mask, out[0]["password"])
+	assert.Equal(t, "token=***", out[0]["note"])
+	assert.Equal(t, "hunter2", in[0]["password"], "input untouched")
 }
