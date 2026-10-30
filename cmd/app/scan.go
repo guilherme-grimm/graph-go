@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -62,7 +64,7 @@ func runScan(configPath, logLevel, logFormat, format string, withHealth, pretty 
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			logger.Debugw("no config file - auto-discovery mode", "path", configPath)
 		} else {
 			logger.Warnw("config load failed - auto-discovery mode", "path", configPath, "err", err)
