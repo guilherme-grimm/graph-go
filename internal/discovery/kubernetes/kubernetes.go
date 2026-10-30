@@ -29,6 +29,11 @@ import (
 // SourceName is the Source tag applied to ServiceInfo produced by this discoverer.
 const SourceName = "kubernetes"
 
+// probeTimeout bounds New's reachability check. Kubeconfigs often keep
+// contexts for clusters that no longer run (a stopped kind cluster); without
+// the probe, discovery would wait on informers that retry forever.
+var probeTimeout = 5 * time.Second
+
 // debounceWindow is the quiet period that collapses bursts of informer events
 // into a single onChange invocation. Rolling deploys and scale events fire
 // many events in quick succession; this batches them.
@@ -72,7 +77,8 @@ var _ discovery.Discoverer = (*Discovery)(nil)
 
 // New creates a Kubernetes discoverer. It tries in-cluster config first, then
 // falls back to a kubeconfig file. If neither works it returns (nil, nil) so
-// callers can skip Kubernetes discovery gracefully.
+// callers can skip Kubernetes discovery gracefully. A configured cluster that
+// does not answer within probeTimeout is an error.
 func New(cfg Config) (*Discovery, error) {
 	restCfg, err := loadRestConfig(cfg)
 	if err != nil {
@@ -85,6 +91,12 @@ func New(cfg Config) (*Discovery, error) {
 	clientset, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes: build clientset: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	if err := clientset.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx).Error(); err != nil {
+		return nil, fmt.Errorf("kubernetes: cluster at %s unreachable: %w", restCfg.Host, err)
 	}
 
 	return newWithClient(clientset, cfg), nil
@@ -164,8 +176,11 @@ func (d *Discovery) Close() error {
 }
 
 // start lazily initialises the shared informer factory and blocks until all
-// caches have synced. sync.Once ensures exactly one goroutine performs
-// initialisation; all concurrent callers wait on readyCh.
+// caches have synced or ctx ends. sync.Once ensures exactly one goroutine
+// performs initialisation; all callers, including that one, wait on readyCh.
+// The sync wait runs in the background because informers retry forever when
+// the API server is down or RBAC forbids a list, and no caller's ctx may be
+// held hostage by that.
 func (d *Discovery) start(ctx context.Context) error {
 	d.once.Do(func() {
 		factory := informers.NewSharedInformerFactory(d.client, 0)
@@ -201,9 +216,16 @@ func (d *Discovery) start(ctx context.Context) error {
 		d.daemonsets = dsInformer.Lister()
 		d.mu.Unlock()
 
-		// Wait for cache sync, then signal all waiters.
-		factory.WaitForCacheSync(stopCh)
-		close(d.readyCh)
+		// Signal waiters once every cache has synced. If Close stops the
+		// factory first, readyCh stays open and callers fail on their ctx.
+		go func() {
+			for _, synced := range factory.WaitForCacheSync(stopCh) {
+				if !synced {
+					return
+				}
+			}
+			close(d.readyCh)
+		}()
 	})
 
 	// All callers (including concurrent ones) wait here until caches are synced.
