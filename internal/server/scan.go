@@ -6,17 +6,16 @@ import (
 	"io"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
+	"github.com/guilherme-grimm/graph-go/internal/graph"
 )
 
-// WriteGraphJSON runs one discovery pass and writes {"data": Graph} to w,
-// matching the /api/graph HTTP envelope. When withHealth is true, one
-// HealthAll sweep is performed and each metric's status is merged onto
-// nodes via the Metadata["adapter"] lookup used by the websocket path.
-// When pretty is true, the output is indented with two spaces.
-func WriteGraphJSON(w io.Writer, reg adapters.Registry, withHealth, pretty bool) error {
+// ScanGraph runs one discovery pass. When withHealth is true, one HealthAll
+// sweep is performed and each metric's status is merged onto nodes via the
+// Metadata["adapter"] lookup used by the websocket path.
+func ScanGraph(reg adapters.Registry, withHealth bool) (*graph.Graph, error) {
 	g, err := reg.DiscoverAll()
 	if err != nil {
-		return fmt.Errorf("discover: %w", err)
+		return nil, fmt.Errorf("discover: %w", err)
 	}
 
 	if withHealth {
@@ -31,6 +30,18 @@ func WriteGraphJSON(w io.Writer, reg adapters.Registry, withHealth, pretty bool)
 				g.Nodes[i].Health = h
 			}
 		}
+	}
+
+	return g, nil
+}
+
+// WriteGraphJSON runs ScanGraph and writes {"data": Graph} to w, matching
+// the /api/graph HTTP envelope. When pretty is true, the output is indented
+// with two spaces.
+func WriteGraphJSON(w io.Writer, reg adapters.Registry, withHealth, pretty bool) error {
+	g, err := ScanGraph(reg, withHealth)
+	if err != nil {
+		return err
 	}
 
 	enc := json.NewEncoder(w)
