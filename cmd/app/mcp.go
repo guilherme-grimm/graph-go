@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/signal"
@@ -39,6 +40,9 @@ func newMCPCmd() *cobra.Command {
 			// is noise there, so default quieter than serve.
 			if !cmd.Flags().Changed("log-level") && os.Getenv("LOG_LEVEL") == "" {
 				logLevel = "warn"
+			}
+			if maxBytes < mcp.MinMaxResponseBytes {
+				return fmt.Errorf("--max-response-bytes must be at least %d", mcp.MinMaxResponseBytes)
 			}
 			return runMCP(cmd.Context(), configPath, logLevel, logFormat, maxBytes)
 		},

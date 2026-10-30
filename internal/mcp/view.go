@@ -22,6 +22,10 @@ const LargeGraphNodes = 300
 // clients accept from one tool call.
 const DefaultMaxResponseBytes = 80 << 10
 
+// MinMaxResponseBytes is the smallest accepted cap: room for the envelope,
+// a hint and a few nodes. Smaller caps could not answer anything useful.
+const MinMaxResponseBytes = 4 << 10
+
 const noneNamespace = "(none)"
 
 // filter selects nodes; empty fields match everything.
@@ -176,6 +180,13 @@ func fitPrefix[T any](items []T, maxBytes int, encode func([]T) ([]byte, error))
 	}
 	if len(b) <= maxBytes {
 		return items, false, nil
+	}
+	// Even with nothing kept the envelope must fit, or the cap is too small
+	// to answer at all; say so rather than silently exceed it.
+	if b, err := encode(items[:0]); err != nil {
+		return nil, false, err
+	} else if len(b) > maxBytes {
+		return nil, false, fmt.Errorf("response cap of %d bytes is too small for this response (%d bytes with nothing in it); raise --max-response-bytes", maxBytes, len(b))
 	}
 	lo, hi := 0, len(items)
 	for lo < hi {

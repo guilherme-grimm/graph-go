@@ -100,8 +100,8 @@ type TopologyOutput struct {
 	Hint       string       `json:"hint,omitempty"`
 }
 
-func (t *tools) getTopology(_ context.Context, _ *sdk.CallToolRequest, in TopologyInput) (*sdk.CallToolResult, TopologyOutput, error) {
-	g, observedAt, err := t.b.Snapshot()
+func (t *tools) getTopology(ctx context.Context, _ *sdk.CallToolRequest, in TopologyInput) (*sdk.CallToolResult, TopologyOutput, error) {
+	g, observedAt, err := t.b.Snapshot(ctx)
 	if err != nil {
 		return nil, TopologyOutput{}, fmt.Errorf("discovery failed: %w", err)
 	}
@@ -145,7 +145,12 @@ func (t *tools) getTopology(_ context.Context, _ *sdk.CallToolRequest, in Topolo
 		out.Hint = fmt.Sprintf("Summary of %d nodes; nodes lists only the unhealthy and degraded ones. "+
 			"Narrow with namespaces/types/health/name for full detail (largest namespaces: %s), or use find_nodes.",
 			len(matched), strings.Join(largestNamespaces(out.Summary, 5), ", "))
-		if !f.empty() {
+		switch {
+		case detail == "summary":
+			// Narrowing never yields detail here; the caller asked for a summary.
+			out.Hint = fmt.Sprintf("Summary of %d matching nodes, as requested; nodes lists only the unhealthy and degraded ones. "+
+				"Call again with detail auto or full for the nodes themselves.", len(matched))
+		case !f.empty():
 			out.Hint = fmt.Sprintf("Summary of %d matching nodes; nodes lists only the unhealthy and degraded ones. "+
 				"Add filters to get under %d nodes for full detail, or use find_nodes.", len(matched), LargeGraphNodes)
 		}
@@ -192,8 +197,8 @@ type NodeOutput struct {
 	Hint       string       `json:"hint,omitempty"`
 }
 
-func (t *tools) getNode(_ context.Context, _ *sdk.CallToolRequest, in NodeInput) (*sdk.CallToolResult, NodeOutput, error) {
-	g, observedAt, err := t.b.Snapshot()
+func (t *tools) getNode(ctx context.Context, _ *sdk.CallToolRequest, in NodeInput) (*sdk.CallToolResult, NodeOutput, error) {
+	g, observedAt, err := t.b.Snapshot(ctx)
 	if err != nil {
 		return nil, NodeOutput{}, fmt.Errorf("discovery failed: %w", err)
 	}
@@ -206,7 +211,7 @@ func (t *tools) getNode(_ context.Context, _ *sdk.CallToolRequest, in NodeInput)
 	idx := nodeIndex(g)
 	n, ok := idx[in.ID]
 	if !ok {
-		out.Hint = fmt.Sprintf("No node with id %q. Use find_nodes to look ids up by name.", in.ID)
+		out.Hint = fmt.Sprintf("No node with id %q. Use find_nodes to look ids up by name.", clip(in.ID, 200))
 		return nil, out, nil
 	}
 	out.Node = &n
@@ -285,7 +290,7 @@ type FindOutput struct {
 	Hint       string    `json:"hint,omitempty"`
 }
 
-func (t *tools) findNodes(_ context.Context, _ *sdk.CallToolRequest, in FindInput) (*sdk.CallToolResult, FindOutput, error) {
+func (t *tools) findNodes(ctx context.Context, _ *sdk.CallToolRequest, in FindInput) (*sdk.CallToolResult, FindOutput, error) {
 	q := strings.ToLower(strings.TrimSpace(in.Query))
 	if q == "" {
 		return nil, FindOutput{}, fmt.Errorf("query must not be empty")
@@ -296,7 +301,7 @@ func (t *tools) findNodes(_ context.Context, _ *sdk.CallToolRequest, in FindInpu
 	}
 	limit = min(limit, 100)
 
-	g, observedAt, err := t.b.Snapshot()
+	g, observedAt, err := t.b.Snapshot(ctx)
 	if err != nil {
 		return nil, FindOutput{}, fmt.Errorf("discovery failed: %w", err)
 	}
@@ -363,4 +368,13 @@ func matchScore(n nodes.Node, q string) int {
 		return 20
 	}
 	return 0
+}
+
+// clip bounds caller input echoed back in a hint, so it cannot push a
+// response past the byte cap.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

@@ -283,3 +283,50 @@ func TestFindNodesRespectsTheByteCap(t *testing.T) {
 	assert.Equal(t, "svc-00-"+long, out.Matches[0].Name, "the best matches are kept")
 	assert.Contains(t, out.Hint, "size cap")
 }
+
+func TestSummaryHintFollowsDetail(t *testing.T) {
+	var calls atomic.Int32
+	cs := connect(t, smallStarter(t, &calls), mcp.Options{})
+
+	out, _ := call[mcp.TopologyOutput](t, cs, "get_topology", map[string]any{"detail": "summary", "namespaces": []string{"shop"}})
+	require.NotNil(t, out.Summary)
+	assert.Contains(t, out.Hint, "detail auto or full", "narrowing never yields detail when a summary was asked for")
+	assert.NotContains(t, out.Hint, "Add filters")
+}
+
+func TestUnknownIDEchoIsBounded(t *testing.T) {
+	var calls atomic.Int32
+	cs := connect(t, smallStarter(t, &calls), mcp.Options{MaxResponseBytes: mcp.MinMaxResponseBytes})
+
+	huge := strings.Repeat("x", 100<<10)
+	out, _, whole := callSized[mcp.NodeOutput](t, cs, "get_node", map[string]any{"id": huge})
+	assert.Nil(t, out.Node)
+	assert.LessOrEqual(t, whole, mcp.MinMaxResponseBytes)
+	assert.Contains(t, out.Hint, "find_nodes")
+}
+
+func TestCapTooSmallIsAnErrorNotAnOversizedAnswer(t *testing.T) {
+	cs := connect(t, bigStarter(10), mcp.Options{MaxResponseBytes: 100})
+
+	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "get_topology", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	assert.True(t, res.IsError)
+	raw, _ := json.Marshal(res.Content)
+	assert.Contains(t, string(raw), "max-response-bytes")
+}
+
+func TestCancelledRequestDoesNotStartDiscovery(t *testing.T) {
+	var calls atomic.Int32
+	b := mcp.NewBackend(smallStarter(t, &calls), nil)
+	t.Cleanup(b.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := b.Snapshot(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, calls.Load(), "a cancelled request must not start the registry")
+
+	_, _, err = b.Snapshot(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), calls.Load())
+}

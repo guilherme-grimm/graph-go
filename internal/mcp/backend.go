@@ -5,6 +5,7 @@
 package mcp
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -81,8 +82,18 @@ func (b *Backend) loop() {
 // Snapshot returns the current graph with every node's health resolved, and
 // the time of the health sweep it reflects. Node metadata is already
 // redacted by the registry.
-func (b *Backend) Snapshot() (*graph.Graph, time.Time, error) {
+//
+// A cancelled ctx stops the request from starting shared work. It does not
+// interrupt a registry start or a discovery already running: other requests
+// share those, and the registry and adapters take no context.
+func (b *Backend) Snapshot(ctx context.Context) (*graph.Graph, time.Time, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, time.Time{}, err
+	}
 	b.init()
+	if err := ctx.Err(); err != nil {
+		return nil, time.Time{}, err
+	}
 	g, err := b.reg.DiscoverAll()
 	if err != nil {
 		return nil, time.Time{}, err
