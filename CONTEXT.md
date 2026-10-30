@@ -28,6 +28,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 | `internal/adapters/{postgres,mongodb,mysql,redis,elasticsearch,s3,http}` | One package per datastore. Listed in `catalog.Default()` (ADR-0002). |
 | `internal/adapters/adaptertest` | The contract test suite every adapter must pass. |
 | `internal/graph` | The graph model: `Graph`, `nodes.Node`, `edges.Edge`, `health.Status`. `render/` turns a `Graph` into Mermaid or Graphviz DOT for `scan --format`. |
+| `internal/redact` | Masks credentials (URL passwords, `password=`-style pairs, bearer tokens, sensitive map keys) in node metadata and health metrics. Applied once in the `Registry`. |
 | `internal/server` | HTTP server, routes, CORS, WebSocket, registry/bootstrap wiring. |
 | `internal/webui` | Embedded frontend (React build) served as SPA fallback. |
 
@@ -180,6 +181,7 @@ Kubernetes-discovered (topology):
 ## Invariants
 
 - An adapter whose `Connect` fails is never registered: it is logged and skipped, and has no node. An adapter that registered but whose `Discover` fails becomes an `unhealthy` service node with its error in `Metadata["error"]`. Neither fails the whole `DiscoverAll`.
+- Credentials never leave the process: `Registry.DiscoverAll` and `HealthAll` pass all node metadata and health metrics through `internal/redact` before caching, so the UI, `scan` and MCP all get masked data.
 - `stdout` is reserved for machine-readable data (`scan` JSON or diagram output); all logging goes to `stderr`. (ADR-0001)
 - The logger is threaded via constructor, never read from a global. (ADR-0001)
 - Env overrides only populate zero-valued config fields; explicit YAML always wins.

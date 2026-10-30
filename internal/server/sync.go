@@ -10,6 +10,7 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
+	"github.com/guilherme-grimm/graph-go/internal/redact"
 )
 
 // registerConcurrency bounds parallel adapter Connect calls during a sync.
@@ -125,7 +126,7 @@ func (s *serviceSync) apply(services []discovery.ServiceInfo, pruneSource string
 			defer func() { <-sem }()
 			k := knownService{connType: svc.Type, source: svc.Source, config: svc.Config}
 			if err := s.reg.Register(svc.Name, svc.Type, adapter, svc.Config); err != nil {
-				s.logger.Warnw("adapter register failed", "service", svc.Name, "type", svc.Type, "err", err)
+				s.logger.Warnw("adapter register failed", "service", svc.Name, "type", svc.Type, "err", redact.String(err.Error()))
 				results <- registered{svc.Name, k, err}
 				return
 			}
