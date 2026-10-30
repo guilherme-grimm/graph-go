@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  auto_review:
+    # Stacked PRs target their parent branch, not main. Without this,
+    # CodeRabbit skips them ("Auto reviews are disabled on base/target
+    # branches other than the default branch") and each needs a manual
+    # `@coderabbitai review`.
+    base_branches:
+      - ".*"
