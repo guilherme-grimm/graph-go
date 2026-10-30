@@ -142,9 +142,10 @@ func healthClass(h string) string {
 	return ""
 }
 
-// mermaidEscaper also flattens line breaks: a label line holding only ```
-// would otherwise close the Markdown fence around the diagram.
-var mermaidEscaper = strings.NewReplacer(`"`, "#quot;", "<", "#lt;", ">", "#gt;", "\r\n", " ", "\n", " ", "\r", " ")
+// mermaidEscaper entity-encodes "|", the edge-label delimiter, so labels stay
+// valid whatever Mermaid version renders them. It also flattens line breaks:
+// a label line holding only ``` would otherwise close the Markdown fence.
+var mermaidEscaper = strings.NewReplacer(`"`, "#quot;", "<", "#lt;", ">", "#gt;", "|", "#124;", "\r\n", " ", "\n", " ", "\r", " ")
 
 // Mermaid writes g as a Mermaid flowchart. With fenced set, the diagram is
 // wrapped in a ```mermaid block so it renders when saved as Markdown.

@@ -172,3 +172,15 @@ func TestMultilineLabelsStayInsideFence(t *testing.T) {
 		assert.Contains(t, d, want)
 	}
 }
+
+func TestMermaidEscapesPipes(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []nodes.Node{{Id: "a", Name: "a|b"}, {Id: "c", Name: "c"}},
+		Edges: []edges.Edge{{Id: "e", Source: "a", Target: "c", Type: "depends_on", Label: "reads|writes"}},
+	}
+	out := mermaid(t, g, false)
+
+	assert.Contains(t, out, `n0["a#124;b"]`)
+	assert.Contains(t, out, `-->|"reads#124;writes"| n1`)
+	assert.NotContains(t, out, "reads|writes")
+}
