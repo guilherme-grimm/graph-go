@@ -4,10 +4,12 @@ package logging
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/term"
 )
 
 // New builds a SugaredLogger for the given level and format.
@@ -22,7 +24,12 @@ func New(level, format string) (*zap.SugaredLogger, error) {
 	switch strings.ToLower(format) {
 	case "", "console":
 		cfg = zap.NewDevelopmentConfig()
-		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		// Colour only for a person at a terminal. Piped stderr (docker logs,
+		// MCP clients, CI) would show the escape codes as text.
+		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+		if term.IsTerminal(int(os.Stderr.Fd())) {
+			cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		}
 	case "json":
 		cfg = zap.NewProductionConfig()
 	default:

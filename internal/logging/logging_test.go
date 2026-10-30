@@ -47,3 +47,15 @@ func TestStacktraceOnlyOnErrors(t *testing.T) {
 		})
 	}
 }
+
+// Tests run with stderr on a pipe, like docker logs or an MCP client.
+func TestNoColourWhenStderrIsNotATerminal(t *testing.T) {
+	out := captureStderr(t, func() {
+		l, err := logging.New("info", "console")
+		require.NoError(t, err)
+		l.Warnw("piped")
+		_ = l.Sync()
+	})
+	assert.Contains(t, out, "WARN")
+	assert.NotContains(t, out, "\x1b[", "escape codes would show up as text")
+}
