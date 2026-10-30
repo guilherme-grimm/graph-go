@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
@@ -61,14 +63,10 @@ func TestStartupReportMixedRegistry(t *testing.T) {
 	}, "")
 
 	g, err := reg.DiscoverAll()
-	if err != nil {
-		t.Fatalf("DiscoverAll: %v", err)
-	}
+	require.NoError(t, err, "DiscoverAll")
 
 	var out strings.Builder
-	if err := writeStartupReport(&out, startupReport(res, g)); err != nil {
-		t.Fatalf("writeStartupReport: %v", err)
-	}
+	require.NoError(t, writeStartupReport(&out, startupReport(res, g)), "writeStartupReport")
 	report := out.String()
 
 	lines := strings.Split(strings.TrimRight(report, "\n"), "\n")
@@ -84,35 +82,22 @@ func TestStartupReportMixedRegistry(t *testing.T) {
 		{5, []string{"✗ queue", "kafka", "kafka"}},
 		{6, []string{"✓ kubernetes", "topology", "2 nodes, 1 edge"}},
 	}
-	if len(lines) != len(want) {
-		t.Fatalf("got %d lines, want %d:\n%s", len(lines), len(want), report)
-	}
-	if strings.Contains(lines[2], "registry:") {
-		t.Errorf("registry prefix should be trimmed: %q", lines[2])
-	}
+	require.Len(t, lines, len(want), report)
+	assert.NotContains(t, lines[2], "registry:", "registry prefix should be trimmed")
 	for _, w := range want {
 		for _, p := range w.parts {
-			if !strings.Contains(lines[w.line], p) {
-				t.Errorf("line %d = %q, want it to contain %q", w.line, lines[w.line], p)
-			}
+			assert.Contains(t, lines[w.line], p, "line %d", w.line)
 		}
 	}
 
 	// Columns line up: every adapter row has its type at the same offset.
-	col := strings.Index(lines[1], "s3")
-	if got := strings.Index(lines[4], "postgres"); got != col {
-		t.Errorf("type column misaligned: %d vs %d\n%s", got, col, report)
-	}
+	assert.Equal(t, strings.Index(lines[1], "s3"), strings.Index(lines[4], "postgres"), "type column misaligned:\n%s", report)
 }
 
 func TestStartupReportEmptyIsQuiet(t *testing.T) {
 	var out strings.Builder
-	if err := writeStartupReport(&out, nil); err != nil {
-		t.Fatal(err)
-	}
-	if out.Len() != 0 {
-		t.Errorf("expected no output, got %q", out.String())
-	}
+	require.NoError(t, writeStartupReport(&out, nil))
+	assert.Empty(t, out.String())
 }
 
 func TestPlural(t *testing.T) {
@@ -128,8 +113,6 @@ func TestPlural(t *testing.T) {
 		{4, "k8s service", "4 k8s services"},
 	}
 	for _, tt := range tests {
-		if got := plural(tt.n, tt.noun); got != tt.want {
-			t.Errorf("plural(%d, %q) = %q, want %q", tt.n, tt.noun, got, tt.want)
-		}
+		assert.Equal(t, tt.want, plural(tt.n, tt.noun), "plural(%d, %q)", tt.n, tt.noun)
 	}
 }
