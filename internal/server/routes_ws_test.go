@@ -130,12 +130,12 @@ func TestNodeHealths_OnlyChangesAreResent(t *testing.T) {
 		{Id: "pod-b", Health: "healthy"},
 		{Id: "no-health"},
 	}}
-	first := nodeHealths(g, nil)
+	first := NodeHealths(g, nil)
 	if len(first) != 2 {
 		t.Fatalf("expected 2 nodes with health, got %v", first)
 	}
 	g.Nodes[1].Health = "unhealthy"
-	second := nodeHealths(g, nil)
+	second := NodeHealths(g, nil)
 	var changed []string
 	for id, h := range second {
 		if first[id] != h {

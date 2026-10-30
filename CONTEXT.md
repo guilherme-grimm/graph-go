@@ -18,7 +18,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 
 | Package | Role |
 |---|---|
-| `cmd/app` | CLI entrypoint (cobra). Subcommands: `serve`, `scan`, `validate`, `demo`, `version`, `--health-check`. Logger construction + `defer Sync()`. |
+| `cmd/app` | CLI entrypoint (cobra). Subcommands: `serve`, `scan`, `validate`, `mcp`, `demo`, `version`, `--health-check`. Logger construction + `defer Sync()`. |
 | `internal/config` | YAML config load + validate. `Config`, `ConnectionEntry`, Docker/K8s toggles. Env overrides populate zero fields only. |
 | `internal/logging` | The single zap construction site (`New(level, format)`). See ADR-0001. |
 | `internal/discovery` | The `Discoverer` contract + `ServiceInfo`. Backends live in subpackages. |
@@ -29,6 +29,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 | `internal/adapters/adaptertest` | The contract test suite every adapter must pass. |
 | `internal/graph` | The graph model: `Graph`, `nodes.Node`, `edges.Edge`, `health.Status`. `render/` turns a `Graph` into Mermaid or Graphviz DOT for `scan --format`. |
 | `internal/redact` | Masks credentials (URL passwords, `password=`-style pairs, bearer tokens, sensitive map keys) in node metadata and health metrics. Applied once in the `Registry`. |
+| `internal/mcp` | MCP server for agents (ADR-0003): a warm `Registry` built in the background at launch (`StartBackend` → `server.StartRegistry`) behind three read-only tools — `get_topology` (filters, summary above 300 nodes, byte cap), `get_node`, `find_nodes`. |
 | `internal/server` | HTTP server, routes, CORS, WebSocket, registry/bootstrap wiring. |
 | `internal/webui` | Embedded frontend (React build) served as SPA fallback. |
 
@@ -194,6 +195,7 @@ Kubernetes-discovered (topology):
 ## Key decisions
 
 - **ADR-0001** — zap `SugaredLogger` over stdlib `log/slog`. Logger constructed once in `internal/logging`, threaded via constructor, no globals.
+- **ADR-0003** — MCP server: a warm stdio process behind three read-only tools (`get_topology`, `get_node`, `find_nodes`), same node/edge shapes as `scan`, a summary above 300 nodes, a byte cap on the whole result, and credentials masked at the registry.
 - **Explicit adapter registration** — no `init()` side effects, no blank imports. `internal/adapters/catalog` names every adapter in one readable list; `cmd/app` builds the Catalog and passes it in. `internal/server` imports only the `Adapter` interface, never a concrete adapter, so any composition root (MCP, flow sampling) can assemble its own set.
 - **Two discoverer flavors** — topology-producing (K8s, emits nodes/edges directly) vs adapter-oriented (Docker, emits `Config` for the adapter bridge). Keeps the `Discoverer` contract uniform while letting each backend contribute at the right level.
 - **Sequential adapter discovery** — `DiscoverAll` probes adapters one at a time. Acceptable at current adapter counts; the latency floor for many remote datastores.

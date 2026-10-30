@@ -211,7 +211,7 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 			// Ship only the health values that changed since the last tick, in
 			// one message. Per-node messages meant thousands of frames (and
 			// thousands of client re-renders) every tick on large clusters.
-			current := nodeHealths(g, s.registry.HealthAll())
+			current := NodeHealths(g, s.registry.HealthAll())
 			base := prevHealth
 			if resendFull {
 				base = nil
@@ -263,11 +263,11 @@ func writeJSON(ctx context.Context, socket *websocket.Conn, msg wsMessage) error
 	return socket.Write(ctx, websocket.MessageText, data)
 }
 
-// nodeHealths resolves the health of every node in g. Adapter-owned nodes get
+// NodeHealths resolves the health of every node in g. Adapter-owned nodes get
 // their health via the adapter lookup; topology nodes (e.g. Kubernetes
 // resources) carry health directly on Node.Health. Nodes with neither are
 // left out.
-func nodeHealths(g *graph.Graph, metrics []health.HealthMetrics) map[string]string {
+func NodeHealths(g *graph.Graph, metrics []health.HealthMetrics) map[string]string {
 	adapterHealth := make(map[string]string, len(metrics))
 	for _, m := range metrics {
 		adapterHealth[m.NodeID] = string(m.Status)

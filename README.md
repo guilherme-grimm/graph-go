@@ -116,6 +116,7 @@ Open **http://localhost:8080**. Other platforms on the [Releases page](https://g
 | `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). Once the first discovery finishes it prints a ✓/✗ line per adapter to stderr, with what it found or why it failed (skipped with `--log-format json`). |
 | `graph-go scan` | Run discovery once and emit the graph to stdout. `--format json` (default) for piping into `jq` or CI checks; `mermaid`, `markdown` (Mermaid in a fenced block, renders on GitHub) or `dot` (Graphviz) for diagrams. `graph-go export` is an alias. |
 | `graph-go validate` | Check the config file and exit non-zero if it's invalid. Reports every missing field, unknown connection type, and unknown key (which `serve` silently ignores). No server is started. |
+| `graph-go mcp` | Serve the topology to AI agents over the Model Context Protocol (stdio). See [Use with AI agents (MCP)](#use-with-ai-agents-mcp). |
 | `graph-go version` | Print version, commit, and build date. |
 | `graph-go --health-check` | Hit local `/health` and exit `0`/`1`. Used by the container `HEALTHCHECK`; not for interactive use. |
 
@@ -126,6 +127,56 @@ Typical flow:
 1. `graph-go demo` for a realistic local walkthrough.
 2. `graph-go serve` to run against your own infrastructure.
 3. `graph-go scan` for one-shot automation, exports, or CI checks — e.g. `graph-go export --format markdown --log-level=warn > ARCHITECTURE.md` for a diagram that renders on GitHub.
+
+---
+
+## Use with AI agents (MCP)
+
+`graph-go mcp` gives coding agents (Claude Code, Cursor, any MCP client) a deterministic view of your infrastructure, so they stop guessing from compose files and manifests. It runs over stdio and exposes three **read-only** tools:
+
+| Tool | Use it for |
+|---|---|
+| `get_topology` | What exists, how it connects, and its health. Filters: `namespaces`, `types`, `health`, `name`. Above 300 nodes it returns a summary (counts per namespace and type, every unhealthy or degraded node in full) and says how to narrow it. |
+| `get_node` | One node with every edge into or out of it and its neighbours: "what depends on this Redis?" |
+| `find_nodes` | Look up ids by name. |
+
+Discovery starts in the background when the client launches the server (the handshake never waits on it) and stays warm for the session; every answer carries `observed_at` for the health it reflects. Credentials in connection strings and errors are masked before anything is returned, and each response is capped (`--max-response-bytes`, default 80 KB).
+
+**Claude Code:**
+
+```bash
+claude mcp add graph-go -- graph-go mcp
+# with a config file:
+claude mcp add graph-go -- graph-go mcp --config /path/to/config.yaml
+```
+
+**Other clients** (Cursor, Claude Desktop, …) use the usual `mcpServers` block:
+
+```json
+{
+  "mcpServers": {
+    "graph-go": { "command": "graph-go", "args": ["mcp"] }
+  }
+}
+```
+
+**From the container image** (`-i` keeps stdin open for the protocol; the socket flags are the same as [above](#run-against-your-own-stack)):
+
+```json
+{
+  "mcpServers": {
+    "graph-go": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm",
+               "-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
+               "--group-add", "<docker socket gid>",
+               "ghcr.io/guilherme-grimm/graph-go:latest", "./graph-go", "mcp"]
+    }
+  }
+}
+```
+
+Logs go to stderr at `warn` level (`--log-level` / `LOG_LEVEL` to change). The design and the reasoning behind the tool surface are in [ADR-0003](docs/adr/0003-mcp-server.md).
 
 ---
 
