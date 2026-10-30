@@ -1,6 +1,6 @@
 # ADR-0003: MCP server — warm stdio process, read-only tools, summary by default
 
-- **Status:** Proposed
+- **Status:** Accepted (merged in #53; implemented in #54)
 - **Date:** 2026-10-30
 - **Extends:** ADR-0001 (stdout reserved for machine-readable data), ADR-0002 (composition roots assemble their own Catalog)
 - **Implements:** issue #20 (M3, first slice). #29 and #30 add tools later.

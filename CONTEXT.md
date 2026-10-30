@@ -195,6 +195,7 @@ Kubernetes-discovered (topology):
 ## Key decisions
 
 - **ADR-0001** — zap `SugaredLogger` over stdlib `log/slog`. Logger constructed once in `internal/logging`, threaded via constructor, no globals.
+- **ADR-0003** — MCP server: a warm stdio process behind three read-only tools (`get_topology`, `get_node`, `find_nodes`), same node/edge shapes as `scan`, a summary above 300 nodes, a byte cap on the whole result, and credentials masked at the registry.
 - **Explicit adapter registration** — no `init()` side effects, no blank imports. `internal/adapters/catalog` names every adapter in one readable list; `cmd/app` builds the Catalog and passes it in. `internal/server` imports only the `Adapter` interface, never a concrete adapter, so any composition root (MCP, flow sampling) can assemble its own set.
 - **Two discoverer flavors** — topology-producing (K8s, emits nodes/edges directly) vs adapter-oriented (Docker, emits `Config` for the adapter bridge). Keeps the `Discoverer` contract uniform while letting each backend contribute at the right level.
 - **Sequential adapter discovery** — `DiscoverAll` probes adapters one at a time. Acceptable at current adapter counts; the latency floor for many remote datastores.
