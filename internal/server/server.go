@@ -64,20 +64,7 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 		}()
 	}
 
-	// Start a Watch() goroutine for each discoverer. Topology-oriented
-	// discoverers refresh their topology on each callback; adapter-oriented
-	// ones just invalidate the cache so next DiscoverAll re-queries adapters.
-	watchCtx, watchCancel := context.WithCancel(context.Background())
-	for _, d := range discoverers {
-		d := d
-		onChange := buildOnChange(watchCtx, d, svcSync, logger)
-		go func() {
-			if err := d.Watch(watchCtx, onChange); err != nil {
-				logger.Warnw("discoverer watch stopped", "discoverer", d.Name(), "err", err)
-			}
-		}()
-		logger.Infow("discoverer watch started", "discoverer", d.Name())
-	}
+	watchCancel := startWatchers(discoverers, svcSync, logger)
 
 	s := &Server{
 		port:           port,
@@ -100,6 +87,41 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 	}
 
 	return server, cleanup
+}
+
+// StartRegistry builds the registry like BuildRegistry and also starts the
+// discoverers' Watch loops, so the registry stays current for as long as the
+// process runs. It is what a long-lived consumer other than the HTTP server
+// (the MCP server) uses. The returned func stops the watchers and closes
+// everything.
+func StartRegistry(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catalog) (adapters.Registry, func()) {
+	if logger == nil {
+		logger = zap.NewNop().Sugar()
+	}
+	reg, discoverers, svcSync, _, regCleanup := buildRegistry(cfg, logger, cat)
+	watchCancel := startWatchers(discoverers, svcSync, logger)
+	return reg, func() {
+		watchCancel()
+		regCleanup()
+	}
+}
+
+// startWatchers starts a Watch() goroutine for each discoverer and returns
+// the func that stops them. Topology-oriented discoverers refresh their
+// topology on each callback; adapter-oriented ones re-sync their services.
+func startWatchers(discoverers []discovery.Discoverer, svcSync *serviceSync, logger *zap.SugaredLogger) context.CancelFunc {
+	watchCtx, watchCancel := context.WithCancel(context.Background())
+	for _, d := range discoverers {
+		d := d
+		onChange := buildOnChange(watchCtx, d, svcSync, logger)
+		go func() {
+			if err := d.Watch(watchCtx, onChange); err != nil {
+				logger.Warnw("discoverer watch stopped", "discoverer", d.Name(), "err", err)
+			}
+		}()
+		logger.Infow("discoverer watch started", "discoverer", d.Name())
+	}
+	return watchCancel
 }
 
 // buildOnChange returns the callback invoked on discoverer events. For
