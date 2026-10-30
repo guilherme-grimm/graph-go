@@ -3,11 +3,14 @@ package adapters_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
@@ -40,7 +43,8 @@ func (a *leakyAdapter) Close() error { return nil }
 // Nothing that leaves the registry may contain the password, whichever
 // path it took.
 func TestRegistryRedactsEveryOutput(t *testing.T) {
-	reg := adapters.NewRegistry(zap.NewNop().Sugar())
+	core, logs := observer.New(zap.DebugLevel)
+	reg := adapters.NewRegistry(zap.New(core).Sugar())
 	require.NoError(t, reg.Register("api", "http", &leakyAdapter{}, nil))
 	require.NoError(t, reg.Register("orders", "postgres", &leakyAdapter{
 		discoverErr: errors.New("connect postgres://app:hunter2@db:5432/orders: refused"),
@@ -59,7 +63,15 @@ func TestRegistryRedactsEveryOutput(t *testing.T) {
 	healthJSON, err := json.Marshal(reg.HealthAll())
 	require.NoError(t, err)
 
-	for name, out := range map[string]string{"graph": string(graphJSON), "health": string(healthJSON)} {
+	// ContextMap renders error fields as their text; marshalling the entries
+	// would turn errors into {} and hide a leak.
+	var logText strings.Builder
+	for _, e := range logs.All() {
+		fmt.Fprintf(&logText, "%s %v\n", e.Message, e.ContextMap())
+	}
+	require.NotZero(t, logs.Len(), "the failing Discover is logged")
+
+	for name, out := range map[string]string{"graph": string(graphJSON), "health": string(healthJSON), "logs": logText.String()} {
 		assert.NotContains(t, out, "hunter2", "%s output leaks the password:\n%s", name, out)
 	}
 	// Masking keeps what is useful: hosts and users stay readable.

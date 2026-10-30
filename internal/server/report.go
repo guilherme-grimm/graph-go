@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/guilherme-grimm/graph-go/internal/graph"
+	"github.com/guilherme-grimm/graph-go/internal/redact"
 )
 
 // reportLine is one row of the startup report: an adapter or a topology source.
@@ -54,7 +55,7 @@ func startupReport(res syncResult, g *graph.Graph) []reportLine {
 		switch f := byAdapter[a.name]; {
 		case a.err != nil:
 			// The row already names the adapter; drop the registry's prefix.
-			line.stat = strings.TrimPrefix(a.err.Error(), fmt.Sprintf("registry: failed to connect adapter %q: ", a.name))
+			line.stat = redact.String(strings.TrimPrefix(a.err.Error(), fmt.Sprintf("registry: failed to connect adapter %q: ", a.name)))
 		case f != nil && f.errMsg != "":
 			line.stat = f.errMsg
 		default:
