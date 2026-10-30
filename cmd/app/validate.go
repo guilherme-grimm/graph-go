@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,15 +30,21 @@ func runValidate(cmd *cobra.Command, configPath string) error {
 		return err
 	}
 
-	stderr := cmd.ErrOrStderr()
+	var report strings.Builder
 	if len(problems) == 0 {
-		fmt.Fprintf(stderr, "✓ %s is valid\n", configPath)
-		return nil
+		fmt.Fprintf(&report, "✓ %s is valid\n", configPath)
+	} else {
+		fmt.Fprintf(&report, "✗ %s has %d problem(s):\n", configPath, len(problems))
+		for _, p := range problems {
+			fmt.Fprintf(&report, "  - %s\n", p)
+		}
+	}
+	if _, err := io.WriteString(cmd.ErrOrStderr(), report.String()); err != nil {
+		return fmt.Errorf("write report: %w", err)
 	}
 
-	fmt.Fprintf(stderr, "✗ %s has %d problem(s):\n", configPath, len(problems))
-	for _, p := range problems {
-		fmt.Fprintf(stderr, "  - %s\n", p)
+	if len(problems) > 0 {
+		return fmt.Errorf("invalid config: %s", configPath)
 	}
-	return fmt.Errorf("invalid config: %s", configPath)
+	return nil
 }
