@@ -3,6 +3,9 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestScanSubcommandRegistered(t *testing.T) {
@@ -147,20 +150,16 @@ func TestScanHelpOutput(t *testing.T) {
 func TestExportIsScanAlias(t *testing.T) {
 	root := newRootCmd()
 	cmd, _, err := root.Find([]string{"export"})
-	if err != nil {
-		t.Fatalf("find export: %v", err)
-	}
-	if cmd.Name() != "scan" {
-		t.Errorf("export resolved to %q, want scan", cmd.Name())
-	}
+	require.NoError(t, err, "find export")
+	assert.Equal(t, "scan", cmd.Name(), "export should resolve to scan")
 }
 
 func TestScanFormatUsageListsDiagrams(t *testing.T) {
 	scan := findSubcommand(newRootCmd(), "scan")
-	usage := scan.LocalFlags().Lookup("format").Usage
+	require.NotNil(t, scan, "scan subcommand not registered")
+	format := scan.LocalFlags().Lookup("format")
+	require.NotNil(t, format, "scan missing --format")
 	for _, f := range scanFormats {
-		if !strings.Contains(usage, f) {
-			t.Errorf("--format usage %q missing %q", usage, f)
-		}
+		assert.Contains(t, format.Usage, f, "--format usage should list %q", f)
 	}
 }
