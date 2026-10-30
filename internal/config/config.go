@@ -105,7 +105,31 @@ func Check(path string) ([]error, error) {
 		}
 	}
 
+	// serve reads only the first document, so anything after a "---" is
+	// silently ignored there; say so here.
+	// Empty documents (a trailing "---") are harmless and skipped.
+	for {
+		var extra yaml.Node
+		if err := dec.Decode(&extra); err != nil {
+			break
+		}
+		if hasContent(&extra) {
+			problems = append(problems, errors.New("config: only one YAML document is supported; everything after the first '---' separator is ignored"))
+			break
+		}
+	}
+
 	return append(problems, cfg.Problems()...), nil
+}
+
+// hasContent reports whether a decoded document holds anything but null.
+func hasContent(doc *yaml.Node) bool {
+	for _, n := range doc.Content {
+		if n.Kind != yaml.ScalarNode || n.Tag != "!!null" {
+			return true
+		}
+	}
+	return false
 }
 
 // unknownFieldRe matches yaml.v3's KnownFields message, which names Go types.

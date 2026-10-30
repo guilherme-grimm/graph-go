@@ -92,6 +92,34 @@ connections:
 			},
 		},
 		{
+			name: "second document is reported",
+			body: `
+connections:
+  - name: db
+    type: postgres
+    dsn: postgres://localhost/db
+---
+connections:
+  - name: cache
+    type: redis
+    uri: redis://localhost:6379
+`,
+			want: []string{"only one YAML document is supported"},
+		},
+		{
+			name: "leading separator is a single document",
+			body: `---
+connections:
+  - name: db
+    type: postgres
+    dsn: postgres://localhost/db
+`,
+		},
+		{
+			name: "trailing empty documents are fine",
+			body: "connections: []\n---\n# only a comment\n---\n",
+		},
+		{
 			name: "syntax error stops validation",
 			body: "connections: [\n",
 			want: []string{"failed to parse"},
