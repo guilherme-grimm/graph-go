@@ -12,6 +12,7 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/health"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
+	"github.com/guilherme-grimm/graph-go/internal/redact"
 )
 
 const defaultCacheTTL = 30 * time.Second
@@ -284,6 +285,12 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 		allNodes = append(allNodes, topoN...)
 		allEdges = append(allEdges, topoE...)
 
+		// Everything served from here (UI, scan, MCP) is masked once, before
+		// caching; error strings in particular can echo connection details.
+		for i := range allNodes {
+			allNodes[i].Metadata = redact.Map(allNodes[i].Metadata)
+		}
+
 		g := &graph.Graph{Nodes: allNodes, Edges: allEdges}
 
 		// Store in cache
@@ -347,7 +354,7 @@ func (r *registry) HealthAll() []health.HealthMetrics {
 			metrics = append(metrics, health.HealthMetrics{
 				NodeID:    e.name,
 				Status:    status,
-				Metrics:   m,
+				Metrics:   redact.Map(m),
 				Timestamp: time.Now(),
 			})
 		}
