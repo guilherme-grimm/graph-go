@@ -24,7 +24,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 | `internal/discovery` | The `Discoverer` contract + `ServiceInfo`. Backends live in subpackages. |
 | `internal/discovery/docker` | Docker discoverer: classifies containers, extracts credentials, watches Docker events, honors `graphgo.*` labels. |
 | `internal/discovery/kubernetes` | K8s discoverer: informers with debounced events, maps cluster snapshot to topology nodes/edges. |
-| `internal/adapters` | The `Adapter` interface, factory registry, `Registry` (the aggregator), cache, singleflight, topology merge. |
+| `internal/adapters` | The `Adapter` interface, the `Catalog` (connection type → constructor), `Registry` (the aggregator), cache, singleflight, topology merge. |
 | `internal/adapters/{postgres,mongodb,mysql,redis,elasticsearch,s3,http}` | One package per datastore. Listed in `catalog.Default()` (ADR-0002). |
 | `internal/adapters/adaptertest` | The contract test suite every adapter must pass. |
 | `internal/graph` | The graph model: `Graph`, `nodes.Node`, `edges.Edge`, `health.Status`. `render/` turns a `Graph` into Mermaid or Graphviz DOT for `scan --format`. |
@@ -179,7 +179,7 @@ Kubernetes-discovered (topology):
 
 ## Invariants
 
-- A failing adapter becomes an `unhealthy` service node with its error in `Metadata["error"]` — it never fails the whole `DiscoverAll`.
+- An adapter whose `Connect` fails is never registered: it is logged and skipped, and has no node. An adapter that registered but whose `Discover` fails becomes an `unhealthy` service node with its error in `Metadata["error"]`. Neither fails the whole `DiscoverAll`.
 - `stdout` is reserved for machine-readable data (`scan` JSON or diagram output); all logging goes to `stderr`. (ADR-0001)
 - The logger is threaded via constructor, never read from a global. (ADR-0001)
 - Env overrides only populate zero-valued config fields; explicit YAML always wins.
