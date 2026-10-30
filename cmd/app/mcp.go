@@ -28,7 +28,7 @@ func newMCPCmd() *cobra.Command {
 		Short: "Serve the discovered topology to AI agents over MCP (stdio).",
 		Long: "mcp runs a Model Context Protocol server on stdin/stdout so coding agents can query your " +
 			"infrastructure with three read-only tools: get_topology, get_node and find_nodes. Discovery starts " +
-			"on the first tool call and stays warm for the session. Logs go to stderr at warn level unless " +
+			"in the background at launch and stays warm for the session. Logs go to stderr at warn level unless " +
 			"--log-level or LOG_LEVEL says otherwise.",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
@@ -68,7 +68,7 @@ func runMCP(ctx context.Context, configPath, logLevel, logFormat string, maxByte
 		cfg = &config.Config{}
 	}
 
-	backend := mcp.NewBackend(func() (adapters.Registry, func()) {
+	backend := mcp.StartBackend(func() (adapters.Registry, func()) {
 		return server.StartRegistry(cfg, logger, catalog.Default())
 	}, logger)
 	defer backend.Close()

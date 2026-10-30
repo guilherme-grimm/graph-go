@@ -32,12 +32,18 @@ Issue #20 asked for a stdio server whose `get_topology` returns the
 
 ### Process model
 
-- **Long-lived and warm.** Clients start one server per session. On the first
-  tool call (lazily, so a misconfigured client does not block session start)
-  it builds the registry exactly as `serve` does (`server.BuildRegistry`,
-  Docker and Kubernetes discoverers, YAML connections) and starts the
-  discoverers' `Watch` loops. Later calls are served from the registry's
-  cache, which the watchers keep fresh.
+- **Long-lived and warm.** Clients start one server per session. At launch
+  (`mcp.StartBackend`) it starts building the registry **in the background**,
+  exactly as `serve` does (`server.StartRegistry`: Docker and Kubernetes
+  discoverers, YAML connections, and the discoverers' `Watch` loops), so the
+  stdio handshake never waits on discovery. Tool calls wait for the build to
+  finish, or for their request to be cancelled, and are then served from the
+  registry's cache, which the watchers keep fresh.
+- **No lazy initialisation.** An earlier draft built the registry on the
+  first tool call behind a `sync.Once`. Review rejected that hidden
+  `init`-style step, in the spirit of ADR-0002, for an explicit start with a
+  `ready` channel. The cost: a session that never calls a tool still pays for
+  one discovery pass in the background.
 - **Health** comes from a background loop on the same 5s tick the WebSocket
   uses, not from a sweep per call. Every response carries `observed_at`, the
   time of the health sweep it reflects.

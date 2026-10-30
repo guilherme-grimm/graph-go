@@ -26,47 +26,48 @@ const healthInterval = 5 * time.Second
 // one that returns a registry holding fixture topology.
 type Starter func() (adapters.Registry, func())
 
-// Backend lazily starts the registry on the first tool call, so a client that
-// launches the server but never uses it pays nothing, and keeps health fresh
-// with a background sweep.
+// Backend owns the registry the tools read from. StartBackend builds it in the
+// background, so the stdio handshake never waits on discovery, and keeps
+// health fresh with a periodic sweep.
 type Backend struct {
-	start  Starter
 	logger *zap.SugaredLogger
 
-	once     sync.Once
-	reg      adapters.Registry
-	stopReg  func()
-	stopLoop chan struct{}
+	// ready is closed once the registry is built and has one health sweep;
+	// reg and stopReg are set before that and never change after.
+	ready   chan struct{}
+	reg     adapters.Registry
+	stopReg func()
+
+	stopLoop chan struct{} // closed by Close
+	loopDone chan struct{} // closed when the background goroutine returns
 
 	mu         sync.RWMutex
 	metrics    []health.HealthMetrics
 	observedAt time.Time
 }
 
-// NewBackend returns a Backend that calls start on first use.
-func NewBackend(start Starter, logger *zap.SugaredLogger) *Backend {
+// StartBackend starts building the registry with start and returns at once.
+// Tools wait for it (or for their request to be cancelled) in Snapshot.
+func StartBackend(start Starter, logger *zap.SugaredLogger) *Backend {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
-	return &Backend{start: start, logger: logger, stopLoop: make(chan struct{})}
+	b := &Backend{
+		logger:   logger,
+		ready:    make(chan struct{}),
+		stopLoop: make(chan struct{}),
+		loopDone: make(chan struct{}),
+	}
+	go b.run(start)
+	return b
 }
 
-func (b *Backend) init() {
-	b.once.Do(func() {
-		b.reg, b.stopReg = b.start()
-		b.sweep()
-		go b.loop()
-	})
-}
+func (b *Backend) run(start Starter) {
+	defer close(b.loopDone)
+	b.reg, b.stopReg = start()
+	b.sweep()
+	close(b.ready)
 
-func (b *Backend) sweep() {
-	m := b.reg.HealthAll()
-	b.mu.Lock()
-	b.metrics, b.observedAt = m, time.Now().UTC()
-	b.mu.Unlock()
-}
-
-func (b *Backend) loop() {
 	t := time.NewTicker(healthInterval)
 	defer t.Stop()
 	for {
@@ -79,18 +80,30 @@ func (b *Backend) loop() {
 	}
 }
 
+func (b *Backend) sweep() {
+	m := b.reg.HealthAll()
+	b.mu.Lock()
+	b.metrics, b.observedAt = m, time.Now().UTC()
+	b.mu.Unlock()
+}
+
 // Snapshot returns the current graph with every node's health resolved, and
 // the time of the health sweep it reflects. Node metadata is already
 // redacted by the registry.
 //
-// A cancelled ctx stops the request from starting shared work. It does not
-// interrupt a registry start or a discovery already running: other requests
-// share those, and the registry and adapters take no context.
+// It waits for the registry to be built unless ctx ends first. A cancelled
+// ctx stops this request; it does not interrupt the registry start or a
+// discovery already running, which other requests share and which take no
+// context.
 func (b *Backend) Snapshot(ctx context.Context) (*graph.Graph, time.Time, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, time.Time{}, err
 	}
-	b.init()
+	select {
+	case <-b.ready:
+	case <-ctx.Done():
+		return nil, time.Time{}, ctx.Err()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, time.Time{}, err
 	}
@@ -116,14 +129,11 @@ func (b *Backend) Snapshot(ctx context.Context) (*graph.Graph, time.Time, error)
 	return &graph.Graph{Nodes: ns, Edges: g.Edges}, observedAt, nil
 }
 
-// Close stops the health loop and the registry, if they were started.
+// Close stops the health sweep and shuts the registry down. If the registry
+// is still being built it waits for that to finish first, so nothing is
+// left running.
 func (b *Backend) Close() {
-	// Waits for an in-flight init, and stops a later one from starting the
-	// registry after shutdown.
-	b.once.Do(func() {})
-	if b.reg == nil {
-		return
-	}
 	close(b.stopLoop)
+	<-b.loopDone
 	b.stopReg()
 }

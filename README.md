@@ -140,7 +140,7 @@ Typical flow:
 | `get_node` | One node with every edge into or out of it and its neighbours: "what depends on this Redis?" |
 | `find_nodes` | Look up ids by name. |
 
-Discovery starts on the first tool call and stays warm for the session; every answer carries `observed_at` for the health it reflects. Credentials in connection strings and errors are masked before anything is returned, and each response is capped (`--max-response-bytes`, default 80 KB).
+Discovery starts in the background when the client launches the server (the handshake never waits on it) and stays warm for the session; every answer carries `observed_at` for the health it reflects. Credentials in connection strings and errors are masked before anything is returned, and each response is capped (`--max-response-bytes`, default 80 KB).
 
 **Claude Code:**
 

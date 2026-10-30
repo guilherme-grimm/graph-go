@@ -29,7 +29,7 @@ Tagline: **"See your infrastructure. Zero Config."**
 | `internal/adapters/adaptertest` | The contract test suite every adapter must pass. |
 | `internal/graph` | The graph model: `Graph`, `nodes.Node`, `edges.Edge`, `health.Status`. `render/` turns a `Graph` into Mermaid or Graphviz DOT for `scan --format`. |
 | `internal/redact` | Masks credentials (URL passwords, `password=`-style pairs, bearer tokens, sensitive map keys) in node metadata and health metrics. Applied once in the `Registry`. |
-| `internal/mcp` | MCP server for agents (ADR-0003): a lazily started, warm `Registry` (`server.StartRegistry`) behind three read-only tools — `get_topology` (filters, summary above 300 nodes, byte cap), `get_node`, `find_nodes`. |
+| `internal/mcp` | MCP server for agents (ADR-0003): a warm `Registry` built in the background at launch (`StartBackend` → `server.StartRegistry`) behind three read-only tools — `get_topology` (filters, summary above 300 nodes, byte cap), `get_node`, `find_nodes`. |
 | `internal/server` | HTTP server, routes, CORS, WebSocket, registry/bootstrap wiring. |
 | `internal/webui` | Embedded frontend (React build) served as SPA fallback. |
 

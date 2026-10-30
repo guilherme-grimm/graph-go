@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -84,7 +85,7 @@ func bigStarter(n int) mcp.Starter {
 func connect(t *testing.T, start mcp.Starter, opts mcp.Options) *sdk.ClientSession {
 	t.Helper()
 	ctx := context.Background()
-	b := mcp.NewBackend(start, nil)
+	b := mcp.StartBackend(start, nil)
 	t.Cleanup(b.Close)
 
 	ct, st := sdk.NewInMemoryTransports()
@@ -136,7 +137,6 @@ func TestToolsAreExactlyTheReadOnlySet(t *testing.T) {
 		assert.NotEmpty(t, tool.Description, tool.Name)
 	}
 	assert.ElementsMatch(t, mcp.ToolNames, names, "adding a tool is a deliberate change: update ToolNames and ADR-0003")
-	assert.Zero(t, calls.Load(), "listing tools must not start discovery")
 }
 
 func TestGetTopologySmallGraphIsFull(t *testing.T) {
@@ -144,7 +144,7 @@ func TestGetTopologySmallGraphIsFull(t *testing.T) {
 	cs := connect(t, smallStarter(t, &calls), mcp.Options{})
 
 	out, raw := call[mcp.TopologyOutput](t, cs, "get_topology", nil)
-	assert.Equal(t, int32(1), calls.Load(), "first call starts discovery")
+	assert.Equal(t, int32(1), calls.Load(), "the registry is built once, at start")
 	assert.False(t, out.Truncated)
 	assert.Nil(t, out.Summary)
 	assert.Equal(t, out.Total.Nodes, len(out.Nodes))
@@ -315,18 +315,37 @@ func TestCapTooSmallIsAnErrorNotAnOversizedAnswer(t *testing.T) {
 	assert.Contains(t, string(raw), "max-response-bytes")
 }
 
-func TestCancelledRequestDoesNotStartDiscovery(t *testing.T) {
+func TestRequestStopsWaitingWhenCancelled(t *testing.T) {
+	release := make(chan struct{})
 	var calls atomic.Int32
-	b := mcp.NewBackend(smallStarter(t, &calls), nil)
+	b := mcp.StartBackend(func() (adapters.Registry, func()) {
+		<-release // a slow start, e.g. an unreachable cluster probe
+		return smallStarter(t, &calls)()
+	}, nil)
 	t.Cleanup(b.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
 	_, _, err := b.Snapshot(ctx)
-	require.ErrorIs(t, err, context.Canceled)
-	assert.Zero(t, calls.Load(), "a cancelled request must not start the registry")
+	require.ErrorIs(t, err, context.DeadlineExceeded, "the request gives up instead of waiting on the start")
+	assert.Less(t, time.Since(start), 2*time.Second)
 
-	_, _, err = b.Snapshot(context.Background())
-	require.NoError(t, err)
+	close(release)
+	g, _, err := b.Snapshot(context.Background())
+	require.NoError(t, err, "a later request gets the registry once it is built")
+	assert.NotEmpty(t, g.Nodes)
 	assert.Equal(t, int32(1), calls.Load())
+}
+
+func TestStartBackendDoesNotBlock(t *testing.T) {
+	release := make(chan struct{})
+	start := time.Now()
+	b := mcp.StartBackend(func() (adapters.Registry, func()) {
+		<-release
+		return adapters.NewRegistry(zap.NewNop().Sugar()), func() {}
+	}, nil)
+	assert.Less(t, time.Since(start), time.Second, "the handshake must not wait on discovery")
+	close(release)
+	b.Close()
 }
