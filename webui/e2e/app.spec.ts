@@ -310,15 +310,15 @@ test.describe('Node Inspector', () => {
     await nodes.first().click();
     const inspector = page.locator('[class*="inspector"]').first();
     await expect(inspector).toBeVisible({ timeout: 5_000 });
-    const firstName = await inspector.locator('h2').textContent();
 
-    // Click second node
+    // Click second node: the selection (and its URL) must follow. Names can
+    // repeat across node types, so compare IDs rather than headings.
+    const firstId = await nodes.first().getAttribute('data-id');
+    const secondId = await nodes.nth(1).getAttribute('data-id');
+    expect(secondId).not.toBe(firstId);
     await nodes.nth(1).click();
-    await page.waitForTimeout(500);
-    const secondName = await inspector.locator('h2').textContent();
-
-    // Names should be different (most likely)
-    expect(secondName).toBeTruthy();
+    await expect.poll(() => page.url()).toContain(`/node/${secondId}`);
+    await expect(inspector.locator('h2')).not.toBeEmpty();
   });
 
   test('clicking the canvas background deselects the node', async ({ page }) => {
@@ -747,7 +747,7 @@ test.describe('API Integration', () => {
   test('edge source and target reference existing nodes', async ({ request }) => {
     const response = await request.get('/api/graph');
     const body = await response.json();
-    const nodeIds = new Set(body.data.nodes.map((n: any) => n.id));
+    const nodeIds = new Set(body.data.nodes.map((n: { id: string }) => n.id));
 
     for (const edge of body.data.edges) {
       expect(nodeIds.has(edge.source)).toBeTruthy();

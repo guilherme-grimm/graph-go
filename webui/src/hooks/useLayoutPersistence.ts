@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Graph } from '../types';
 
 interface Position {
@@ -67,15 +67,14 @@ export function useLayoutPersistence(graph: Graph | undefined, layoutMode?: stri
   const [graphHash, setGraphHash] = useState<string>('');
   const [savedPositions, setSavedPositions] = useState<Map<string, Position>>(new Map());
 
-  // Calculate hash and load positions when graph or layout mode changes
-  useEffect(() => {
-    const hash = calculateGraphHash(graph, layoutMode);
-    if (hash && hash !== graphHash) {
-      setGraphHash(hash);
-      const positions = loadPositions(hash);
-      setSavedPositions(positions);
-    }
-  }, [graph, graphHash, layoutMode]);
+  // Load positions when the graph or layout mode changes. This adjusts state
+  // during render (React's pattern for state derived from props) instead of
+  // in an effect, so the first paint already has the saved positions.
+  const hash = useMemo(() => calculateGraphHash(graph, layoutMode), [graph, layoutMode]);
+  if (hash && hash !== graphHash) {
+    setGraphHash(hash);
+    setSavedPositions(loadPositions(hash));
+  }
 
   // Save a single position (debounced externally)
   const savePosition = useCallback((nodeId: string, position: { x: number; y: number }, isPinned: boolean = false) => {
