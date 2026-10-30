@@ -5,6 +5,8 @@ package kubernetes
 // minimal — anything exported here is explicitly test-only.
 
 import (
+	"time"
+
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -28,3 +30,11 @@ var (
 	AggregateHealth           = aggregateHealth
 	PodMatchesServiceSelector = podMatchesServiceSelector
 )
+
+// SetProbeTimeout shortens New's reachability check for a test and restores
+// it afterwards.
+func SetProbeTimeout(t interface{ Cleanup(func()) }, d time.Duration) {
+	prev := probeTimeout
+	probeTimeout = d
+	t.Cleanup(func() { probeTimeout = prev })
+}
