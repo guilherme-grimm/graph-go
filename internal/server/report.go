@@ -135,7 +135,9 @@ func writeStartupReport(w io.Writer, lines []reportLine) error {
 		if !l.ok {
 			mark = "✗"
 		}
-		fmt.Fprintf(tw, "  %s %s\t%s\t%s\n", mark, l.name, l.kind, l.stat)
+		if _, err := fmt.Fprintf(tw, "  %s %s\t%s\t%s\n", mark, l.name, l.kind, l.stat); err != nil {
+			return err
+		}
 	}
 	if err := tw.Flush(); err != nil {
 		return err
