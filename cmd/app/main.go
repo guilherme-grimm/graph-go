@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -86,7 +87,14 @@ func runServe(configPath, logLevel, logFormat string) error {
 
 	applyServerEnv(&cfg.Server)
 
-	srv, cleanup := server.NewServer(cfg, logger, catalog.Default())
+	// The ✓/✗ table is for people; JSON log consumers already get one
+	// structured line per adapter registration.
+	var report io.Writer = os.Stderr
+	if logFormat == "json" {
+		report = nil
+	}
+
+	srv, cleanup := server.NewServer(cfg, logger, catalog.Default(), report)
 	done := make(chan bool, 1)
 
 	go gracefulShutdown(srv, cleanup, logger, done)
