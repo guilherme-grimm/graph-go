@@ -19,7 +19,8 @@ COPY internal/ ./internal/
 # Stage the frontend bundle into the embed tree before `go build`.
 RUN rm -rf internal/webui/dist && mkdir -p internal/webui/dist
 COPY --from=frontend-build /app/dist/ /app/internal/webui/dist/
-RUN CGO_ENABLED=1 go build -ldflags "-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildDate=${BUILD_DATE}" -o /graph-go ./cmd/app
+# No cgo, same as the release binaries (.goreleaser.yaml).
+RUN CGO_ENABLED=0 go build -ldflags "-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildDate=${BUILD_DATE}" -o /graph-go ./cmd/app
 
 # ---- Runtime ----
 FROM debian:bookworm-slim
