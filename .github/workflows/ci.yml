@@ -24,7 +24,7 @@ env:
 jobs:
   backend:
     name: Backend Tests
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
 
@@ -61,7 +61,7 @@ jobs:
 
   lint:
     name: Backend Lint
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
 
@@ -97,7 +97,7 @@ jobs:
 
   integration:
     name: Integration Tests
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
 

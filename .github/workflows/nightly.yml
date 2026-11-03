@@ -21,7 +21,7 @@ concurrency:
 jobs:
   binaries:
     name: Build & Publish Nightly Binaries
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
         with:
@@ -70,7 +70,7 @@ jobs:
 
   docker:
     name: Build & Push Nightly Image
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
 
