@@ -25,7 +25,25 @@ type DiscoveredService struct {
 	Config      adapters.ConnectionConfig
 	IPAddress   string
 	ContainerID string
+
+	// Project and Service are the Compose project and service labels (empty
+	// for containers not started by Compose). ContainerName is the Docker
+	// container name without the leading slash. disambiguateNames uses them
+	// to rename services whose Name collides with another container's.
+	Project       string
+	Service       string
+	ContainerName string
+
+	// ConfigNameFromLabel is true when a graphgo.name label set Config["name"].
+	// disambiguateNames never rewrites a label-supplied name, even one that
+	// happens to equal the derived service name.
+	ConfigNameFromLabel bool
 }
+
+const (
+	labelComposeProject = "com.docker.compose.project"
+	labelComposeService = "com.docker.compose.service"
+)
 
 // DockerDiscoveryConfig holds settings for Docker-based discovery.
 type DockerDiscoveryConfig struct {
@@ -106,12 +124,18 @@ func (d *DockerDiscovery) Discover(ctx context.Context) ([]discovery.ServiceInfo
 		return nil, fmt.Errorf("discovery: failed to list containers: %w", err)
 	}
 
-	services := make([]discovery.ServiceInfo, 0, len(res.Items))
+	found := make([]DiscoveredService, 0, len(res.Items))
 	for _, ctr := range res.Items {
 		svc, ok := d.processContainer(ctx, ctr)
 		if !ok {
 			continue
 		}
+		found = append(found, svc)
+	}
+	disambiguateNames(found)
+
+	services := make([]discovery.ServiceInfo, 0, len(found))
+	for _, svc := range found {
 		services = append(services, discovery.ServiceInfo{
 			Name:   svc.Name,
 			Type:   string(svc.Type),
@@ -188,27 +212,90 @@ func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Su
 	ip := resolveContainerIP(inspect, d.cfg.Network)
 
 	return DiscoveredService{
-		Name:        name,
-		Type:        svcType,
-		Config:      connCfg,
-		IPAddress:   ip,
-		ContainerID: ctr.ID,
+		Name:          name,
+		Type:          svcType,
+		Config:        connCfg,
+		IPAddress:     ip,
+		ContainerID:   ctr.ID,
+		Project:       labels[labelComposeProject],
+		Service:       labels[labelComposeService],
+		ContainerName: containerName(ctr.Names),
+
+		ConfigNameFromLabel: nameFromLabel(labels),
 	}, true
+}
+
+// disambiguateNames gives every service a unique Name, since the registry
+// keys adapters by name and a duplicate silently replaces the first one.
+// Unique names are left alone, so a host running a single Compose project
+// keeps its bare service names (and its YAML overrides keep matching).
+// A Compose service whose name collides is qualified with its project as
+// "<project>.<service>"; Compose project names can't contain a dot, so the
+// result can't be mistaken for another project's. Anything still colliding
+// (replicas of a scaled service) falls back to the container name, which
+// the daemon keeps unique. A fallback can itself land on another service's
+// name, so that step repeats until nothing changes; each service moves to
+// its container name at most once, so it terminates. The result depends
+// only on the set of containers, not on list order, so refresh and prune
+// stay stable.
+func disambiguateNames(svcs []DiscoveredService) {
+	counts := countNames(svcs)
+	for i := range svcs {
+		if counts[svcs[i].Name] > 1 && svcs[i].Project != "" && svcs[i].Service != "" {
+			rename(&svcs[i], svcs[i].Project+"."+svcs[i].Service)
+		}
+	}
+
+	for changed := true; changed; {
+		changed = false
+		counts = countNames(svcs)
+		for i := range svcs {
+			if counts[svcs[i].Name] > 1 && svcs[i].ContainerName != "" && svcs[i].Name != svcs[i].ContainerName {
+				rename(&svcs[i], svcs[i].ContainerName)
+				changed = true
+			}
+		}
+	}
+}
+
+// rename sets the service's Name and keeps a generated config "name" (the
+// HTTP adapter's node ID) in step with it. A graphgo.name label override is
+// left as is.
+func rename(svc *DiscoveredService, name string) {
+	if _, ok := svc.Config["name"].(string); ok && !svc.ConfigNameFromLabel {
+		svc.Config["name"] = name
+	}
+	svc.Name = name
+}
+
+func countNames(svcs []DiscoveredService) map[string]int {
+	counts := make(map[string]int, len(svcs))
+	for _, s := range svcs {
+		counts[s.Name]++
+	}
+	return counts
 }
 
 // deriveContainerName prefers the Docker Compose service label, then
 // falls back to the container name (stripped of leading /).
 func deriveContainerName(labels map[string]string, names []string) string {
-	if svc, ok := labels["com.docker.compose.service"]; ok && svc != "" {
+	if svc, ok := labels[labelComposeService]; ok && svc != "" {
 		return svc
 	}
 
-	if len(names) > 0 {
-		name := names[0]
-		return strings.TrimPrefix(name, "/")
+	if name := containerName(names); name != "" {
+		return name
 	}
 
 	return "unknown"
+}
+
+// containerName returns the container's primary name without the leading /.
+func containerName(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return strings.TrimPrefix(names[0], "/")
 }
 
 // resolveContainerHost returns the hostname for connecting to the container.
@@ -217,7 +304,7 @@ func deriveContainerName(labels map[string]string, names []string) string {
 func resolveContainerHost(inspect container.InspectResponse, network string) string {
 	// Prefer Compose service name as hostname (Docker DNS)
 	if inspect.Config != nil && inspect.Config.Labels != nil {
-		if svc, ok := inspect.Config.Labels["com.docker.compose.service"]; ok && svc != "" {
+		if svc, ok := inspect.Config.Labels[labelComposeService]; ok && svc != "" {
 			return svc
 		}
 	}
