@@ -162,6 +162,7 @@ Kubernetes-discovered (topology):
 ## ID conventions
 
 - Service node: `service-<name>` (name from config or Docker label).
+- Docker connection address: chosen from where graph-go runs (`resolveAddress`, `internal/discovery/docker/address.go`). In order: the configured `docker.network`; inside a container, the target's IP on a network both share; a published host port (on the host via loopback, from a container via the gateway when bound on all interfaces); on a Linux host, the container IP; finally the Compose service name, which resolves only inside the project's network. graph-go detects its own container at startup (`/.dockerenv`, mountinfo, hostname) and skips it during discovery.
 - Docker adapter name: the Compose service name (`db`), else the container name. When two containers would get the same name, Compose services are qualified as `<project>.<service>` (`trader.db`); replicas still colliding after that use the container name (`trader-db-2`). Unique names stay bare, so YAML overrides keep matching them; to override a qualified service, use the qualified name.
 - Kubernetes: `k8s-<namespace>-<kind>-<name>`; cluster-scoped resources (namespaces) use empty namespace.
 - Adapter-internal IDs are adapter-specific; Redis sanitizes `:` and `/` to `-`.

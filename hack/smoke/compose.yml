@@ -1,0 +1,26 @@
+# Fixture for hack/smoke/smoke.sh. Brought up twice, as Compose projects
+# ggsmoke-a and ggsmoke-b, so both have a `pg` and a `cache` service:
+# the names collide (#43) and every address-resolution path gets exercised.
+#   pg    - not published: reachable only by container IP or a shared network
+#   cache - published on a random host port on all interfaces
+services:
+  pg:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: smoke
+      POSTGRES_DB: shop
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shop"]
+      interval: 2s
+      retries: 30
+
+  cache:
+    image: redis:7-alpine
+    ports:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
