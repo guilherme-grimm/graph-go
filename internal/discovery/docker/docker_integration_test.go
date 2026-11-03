@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -61,8 +62,8 @@ func TestDiscover_ComposeProjectsDoNotCollide(t *testing.T) {
 // test process, i.e. on the host, the way the release binary and
 // `graph-go mcp` run. Compose service names don't resolve there, so each
 // container must come back with an address that can actually be dialed:
-// the published port for one that publishes, the container IP (Linux) for
-// one that doesn't.
+// the published port for one that publishes and, on Linux, the container IP
+// for one that doesn't.
 func TestDiscover_AddressesReachableFromHost(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -85,8 +86,11 @@ func TestDiscover_AddressesReachableFromHost(t *testing.T) {
 		return ctr.GetContainerID()
 	}
 	ids := map[string]string{
-		run("cache-published", true):    "cache-published",
-		run("cache-unpublished", false): "cache-unpublished",
+		run("cache-published", true): "cache-published",
+	}
+	// Bridge IPs are routable from the host on Linux only, not Docker Desktop.
+	if runtime.GOOS == "linux" {
+		ids[run("cache-unpublished", false)] = "cache-unpublished"
 	}
 
 	d, err := NewDockerDiscovery(DockerDiscoveryConfig{}, nil)

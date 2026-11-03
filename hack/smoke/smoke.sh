@@ -32,6 +32,12 @@ pass() { printf '  %s✓%s %s\n' "$G" "$N" "$1"; }
 fail() { printf '  %s✗%s %s\n' "$R" "$N" "$1"; failures=$((failures + 1)); }
 step() { printf '\n%s%s%s\n' "$B" "$1" "$N"; }
 
+# coproc needs bash 4.0 and `exec {fd}>&-` 4.1; macOS ships 3.2 as /bin/bash.
+if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 1))); then
+	echo "smoke: bash 4.1+ is required (macOS: brew install bash)" >&2
+	exit 2
+fi
+
 for tool in docker go jq; do
 	command -v "$tool" >/dev/null || { echo "smoke: $tool is required" >&2; exit 2; }
 done
@@ -91,7 +97,14 @@ check_graph() {
 
 step "host: graph-go scan"
 "$BIN" scan --format json --log-level=error >/tmp/ggsmoke-host.json || true
-check_graph host /tmp/ggsmoke-host.json ggsmoke-a.pg ggsmoke-b.pg ggsmoke-a.cache ggsmoke-b.cache
+# pg is deliberately unpublished. A Linux host reaches it by container IP;
+# Docker Desktop (macOS, Windows) can't route to container IPs, so there only
+# the published caches are reachable, as the README documents.
+if [[ "$(uname -s)" == Linux ]]; then
+	check_graph host /tmp/ggsmoke-host.json ggsmoke-a.pg ggsmoke-b.pg ggsmoke-a.cache ggsmoke-b.cache
+else
+	check_graph host /tmp/ggsmoke-host.json ggsmoke-a.cache ggsmoke-b.cache
+fi
 
 step "host: graph-go mcp"
 coproc MCP { "$BIN" mcp --log-level=error; }
