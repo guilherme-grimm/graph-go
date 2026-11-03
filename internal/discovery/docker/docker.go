@@ -136,6 +136,11 @@ func (d *DockerDiscovery) Watch(ctx context.Context, onChange func()) error {
 	return watchEvents(ctx, d.client, deb.Trigger, d.logger)
 }
 
+// processContainer inspects one container and turns it into a
+// DiscoveredService: it applies the ignore label and image list, classifies
+// the image, resolves host and IP, and extracts credentials plus label
+// overrides. The bool is false when the container is skipped or can't be
+// inspected.
 func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Summary) (DiscoveredService, bool) {
 	// Inspect for full details (env vars, network settings)
 	res, err := d.client.ContainerInspect(ctx, ctr.ID, client.ContainerInspectOptions{})
@@ -265,6 +270,9 @@ func isIgnoredImage(image string, ignoreList []string) bool {
 	return false
 }
 
+// dockerHostFromSocket turns a configured socket path into a DOCKER_HOST
+// URL: values that already carry a scheme pass through, Windows named pipes
+// become npipe://, and anything else is treated as a unix socket path.
 func dockerHostFromSocket(socket, goos string) string {
 	if strings.Contains(socket, "://") {
 		return socket

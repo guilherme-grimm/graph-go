@@ -51,6 +51,10 @@ func watchEvents(ctx context.Context, cli *client.Client, onChange func(), logge
 	}
 }
 
+// consumeEvents calls onChange for every Docker event until the context is
+// cancelled (returning ctx.Err()) or the stream ends. A closed message
+// channel, an error on errCh, or a nil error (the stream finished) all
+// return an error so the caller can reconnect.
 func consumeEvents(ctx context.Context, msgCh <-chan events.Message, errCh <-chan error, onChange func(), logger *zap.SugaredLogger) error {
 	for {
 		select {
