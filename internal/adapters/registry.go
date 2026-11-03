@@ -221,6 +221,9 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 		allNodes := make([]nodes.Node, 0)
 		allEdges := make([]edges.Edge, 0)
 
+		// Discover everything first: IDs can only be made unique across
+		// adapters once every adapter's output is known.
+		results := make([]adapterResult, 0, len(snapshot))
 		for _, e := range snapshot {
 			n, edg, err := e.adapter.Discover()
 			if err != nil {
@@ -234,8 +237,16 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 				})
 				continue
 			}
+			results = append(results, adapterResult{name: e.name, connType: e.connType, nodes: n, edges: edg})
+		}
 
-			if e.connType == "http" {
+		topoN, topoE := r.snapshotTopology()
+		qualifyCollidingIDs(results, topoN, topoE)
+
+		for _, res := range results {
+			n, edg := res.nodes, res.edges
+
+			if res.connType == "http" {
 				// HTTP adapters manage their own top-level node directly
 				allNodes = append(allNodes, n...)
 				allEdges = append(allEdges, edg...)
@@ -243,12 +254,12 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 			}
 
 			// Create a service-level parent node from config
-			serviceID := fmt.Sprintf("service-%s", e.name)
+			serviceID := fmt.Sprintf("service-%s", res.name)
 			allNodes = append(allNodes, nodes.Node{
 				Id:       serviceID,
-				Type:     e.connType,
-				Name:     e.name,
-				Metadata: map[string]any{"adapter": e.name},
+				Type:     res.connType,
+				Name:     res.name,
+				Metadata: map[string]any{"adapter": res.name},
 				Health:   "healthy",
 			})
 
@@ -258,7 +269,7 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 				if n[i].Metadata == nil {
 					n[i].Metadata = map[string]any{}
 				}
-				n[i].Metadata["adapter"] = e.name
+				n[i].Metadata["adapter"] = res.name
 			}
 
 			// Re-parent top-level nodes under the service node
@@ -266,7 +277,7 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 				if n[i].Parent == "" {
 					n[i].Parent = serviceID
 					allEdges = append(allEdges, edges.Edge{
-						Id:     fmt.Sprintf("service-contains-%s-%s", e.name, n[i].Id),
+						Id:     fmt.Sprintf("service-contains-%s-%s", res.name, n[i].Id),
 						Source: serviceID,
 						Target: n[i].Id,
 						Type:   "contains",
@@ -281,7 +292,6 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 
 		// Merge in topology contributions (e.g. Kubernetes) that don't
 		// go through the adapter path.
-		topoN, topoE := r.snapshotTopology()
 		allNodes = append(allNodes, topoN...)
 		allEdges = append(allEdges, topoE...)
 

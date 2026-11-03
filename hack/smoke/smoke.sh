@@ -6,7 +6,8 @@
 #
 # What it checks, against two Compose projects (hack/smoke/compose.yml):
 #   host      bin/graph-go scan from the host: every fixture service healthy,
-#             Postgres tables discovered, colliding names qualified (#43)
+#             Postgres tables discovered, colliding names qualified (#43),
+#             node and edge IDs unique (#62)
 #   mcp       graph-go mcp over stdio: handshake, the three tools, and a
 #             tools/call that returns the fixture
 #   image     the Docker image, run like the README: on the default bridge
@@ -95,6 +96,20 @@ check_graph() {
 	done
 }
 
+# check_unique_ids LABEL FILE: no node or edge id may appear twice, and every
+# parent and edge endpoint must name an existing node (#62).
+check_unique_ids() {
+	local label=$1 file=$2 dups dangling
+	dups=$(jq -r '(.data // .) as $g | ([$g.nodes[].id], [$g.edges[].id]) | group_by(.) | map(select(length > 1) | .[0]) | .[]' "$file" | sort -u | head -5 | tr '\n' ' ')
+	if [[ -z "$dups" ]]; then pass "$label: node and edge ids unique"; else fail "$label: duplicate ids: $dups"; fi
+	dangling=$(jq -r '
+		(.data // .) as $g | ([$g.nodes[].id] | map({(.): true}) | add // {}) as $ids
+		| ([$g.nodes[] | .parent // empty] + [$g.edges[] | .source, .target])
+		| map(select($ids[.] | not)) | unique | .[]
+	' "$file" | head -5 | tr '\n' ' ')
+	if [[ -z "$dangling" ]]; then pass "$label: parents and edges resolve"; else fail "$label: dangling refs: $dangling"; fi
+}
+
 step "host: graph-go scan"
 "$BIN" scan --format json --log-level=error >/tmp/ggsmoke-host.json || true
 # pg is deliberately unpublished. A Linux host reaches it by container IP;
@@ -105,6 +120,7 @@ if [[ "$(uname -s)" == Linux ]]; then
 else
 	check_graph host /tmp/ggsmoke-host.json ggsmoke-a.cache ggsmoke-b.cache
 fi
+check_unique_ids host /tmp/ggsmoke-host.json
 
 step "host: graph-go mcp"
 coproc MCP { "$BIN" mcp --log-level=error; }
