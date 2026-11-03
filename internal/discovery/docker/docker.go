@@ -33,6 +33,11 @@ type DiscoveredService struct {
 	Project       string
 	Service       string
 	ContainerName string
+
+	// ConfigNameFromLabel is true when a graphgo.name label set Config["name"].
+	// disambiguateNames never rewrites a label-supplied name, even one that
+	// happens to equal the derived service name.
+	ConfigNameFromLabel bool
 }
 
 const (
@@ -215,6 +220,8 @@ func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Su
 		Project:       labels[labelComposeProject],
 		Service:       labels[labelComposeService],
 		ContainerName: containerName(ctr.Names),
+
+		ConfigNameFromLabel: nameFromLabel(labels),
 	}, true
 }
 
@@ -252,10 +259,10 @@ func disambiguateNames(svcs []DiscoveredService) {
 }
 
 // rename sets the service's Name and keeps a generated config "name" (the
-// HTTP adapter's node ID) in step with it. A graphgo.name label override
-// differs from the derived name and is left as is.
+// HTTP adapter's node ID) in step with it. A graphgo.name label override is
+// left as is.
 func rename(svc *DiscoveredService, name string) {
-	if v, ok := svc.Config["name"].(string); ok && v == svc.Name {
+	if _, ok := svc.Config["name"].(string); ok && !svc.ConfigNameFromLabel {
 		svc.Config["name"] = name
 	}
 	svc.Name = name

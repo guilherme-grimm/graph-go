@@ -43,6 +43,13 @@ func ShouldIgnore(labels map[string]string) bool {
 	return ok && strings.EqualFold(v, "true")
 }
 
+// nameFromLabel reports whether a graphgo.name (or legacy graphinfo.name)
+// label overrides the config name, matching what ApplyLabelOverrides applies.
+func nameFromLabel(labels map[string]string) bool {
+	v, ok := labelValue(labels, LabelName, LegacyLabelName)
+	return ok && v != ""
+}
+
 // ApplyLabelOverrides applies graphgo.* (and legacy graphinfo.*) label
 // overrides to the detected service type and connection config. graphgo.*
 // takes precedence when both namespaces are present on a container. Returns

@@ -73,7 +73,8 @@ func TestDisambiguateNames_KeepsHTTPConfigNameInStep(t *testing.T) {
 	a := compose("trader", "api", "trader-api-1")
 	a.Config = adapters.ConnectionConfig{"name": "api"}
 	b := compose("basics", "api", "basics-api-1")
-	b.Config = adapters.ConnectionConfig{"name": "custom"} // graphgo.name override
+	b.Config = adapters.ConnectionConfig{"name": "custom"}
+	b.ConfigNameFromLabel = true
 	svcs := []DiscoveredService{a, b}
 
 	disambiguateNames(svcs)
@@ -81,6 +82,30 @@ func TestDisambiguateNames_KeepsHTTPConfigNameInStep(t *testing.T) {
 	assert.Equal(t, []string{"trader.api", "basics.api"}, names(svcs))
 	assert.Equal(t, "trader.api", svcs[0].Config["name"])
 	assert.Equal(t, "custom", svcs[1].Config["name"])
+}
+
+func TestDisambiguateNames_KeepsLabelNameEqualToService(t *testing.T) {
+	// A graphgo.name label that happens to equal the service name is still
+	// the user's choice and must survive the rename.
+	a := compose("trader", "db", "trader-db-1")
+	a.Config = adapters.ConnectionConfig{"name": "db"}
+	a.ConfigNameFromLabel = true
+	b := compose("basics", "db", "basics-db-1")
+	b.Config = adapters.ConnectionConfig{"name": "db"}
+	svcs := []DiscoveredService{a, b}
+
+	disambiguateNames(svcs)
+
+	assert.Equal(t, []string{"trader.db", "basics.db"}, names(svcs))
+	assert.Equal(t, "db", svcs[0].Config["name"])
+	assert.Equal(t, "basics.db", svcs[1].Config["name"])
+}
+
+func TestNameFromLabel(t *testing.T) {
+	assert.True(t, nameFromLabel(map[string]string{LabelName: "db"}))
+	assert.True(t, nameFromLabel(map[string]string{LegacyLabelName: "db"}))
+	assert.False(t, nameFromLabel(map[string]string{LabelName: ""}))
+	assert.False(t, nameFromLabel(map[string]string{}))
 }
 
 func TestDisambiguateNames_OrderIndependent(t *testing.T) {
