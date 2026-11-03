@@ -110,7 +110,11 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=release
+          # Tag-scoped caches aren't shared across tags, so also start from
+          # the nightly build on main.
+          cache-from: |
+            type=gha,scope=release
+            type=gha,scope=nightly
           cache-to: type=gha,scope=release,mode=max
           build-args: |
             VERSION=${{ steps.version.outputs.tag }}
