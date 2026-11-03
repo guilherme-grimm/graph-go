@@ -7,9 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"go.uber.org/zap"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
@@ -57,9 +56,8 @@ func NewDockerDiscovery(cfg DockerDiscoveryConfig, logger *zap.SugaredLogger) (*
 		logger = zap.NewNop().Sugar()
 	}
 
-	opts := []client.Opt{
-		client.WithAPIVersionNegotiation(),
-	}
+	// API version negotiation is the default in github.com/moby/moby/client.
+	var opts []client.Opt
 	if cfg.Socket == "" {
 		// Respect DOCKER_HOST/DOCKER_TLS_VERIFY/DOCKER_CERT_PATH and otherwise
 		// fall back to the Docker SDK's platform default (Unix socket on Unix,
@@ -69,14 +67,17 @@ func NewDockerDiscovery(cfg DockerDiscoveryConfig, logger *zap.SugaredLogger) (*
 		opts = append(opts, client.WithHost(dockerHostFromSocket(cfg.Socket, runtime.GOOS)))
 	}
 
-	cli, err := client.NewClientWithOpts(opts...)
+	cli, err := client.New(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("discovery: failed to create Docker client: %w", err)
 	}
 
 	// Verify connectivity
-	if _, err := cli.Ping(context.Background()); err != nil {
+	if _, err := cli.Ping(context.Background(), client.PingOptions{}); err != nil {
 		cli.Close()
+		if permErr := socketPermissionError(cli.DaemonHost()); permErr != nil {
+			return nil, fmt.Errorf("discovery: failed to ping Docker daemon: %w (%w)", err, permErr)
+		}
 		return nil, fmt.Errorf("discovery: failed to ping Docker daemon: %w", err)
 	}
 
@@ -96,19 +97,17 @@ func (d *DockerDiscovery) Close() error {
 // with Source="docker"; Docker-specific fields (IP, container ID) are
 // preserved in Metadata.
 func (d *DockerDiscovery) Discover(ctx context.Context) ([]discovery.ServiceInfo, error) {
-	listOpts := container.ListOptions{
-		Filters: filters.NewArgs(
-			filters.Arg("status", "running"),
-		),
+	listOpts := client.ContainerListOptions{
+		Filters: make(client.Filters).Add("status", "running"),
 	}
 
-	containers, err := d.client.ContainerList(ctx, listOpts)
+	res, err := d.client.ContainerList(ctx, listOpts)
 	if err != nil {
 		return nil, fmt.Errorf("discovery: failed to list containers: %w", err)
 	}
 
-	services := make([]discovery.ServiceInfo, 0, len(containers))
-	for _, ctr := range containers {
+	services := make([]discovery.ServiceInfo, 0, len(res.Items))
+	for _, ctr := range res.Items {
 		svc, ok := d.processContainer(ctx, ctr)
 		if !ok {
 			continue
@@ -139,11 +138,12 @@ func (d *DockerDiscovery) Watch(ctx context.Context, onChange func()) error {
 
 func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Summary) (DiscoveredService, bool) {
 	// Inspect for full details (env vars, network settings)
-	inspect, err := d.client.ContainerInspect(ctx, ctr.ID)
+	res, err := d.client.ContainerInspect(ctx, ctr.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		d.logger.Warnw("docker: failed to inspect container", "container", truncateID(ctr.ID), "err", err)
 		return DiscoveredService{}, false
 	}
+	inspect := res.Container
 
 	labels := ctr.Labels
 	if labels == nil {
@@ -230,16 +230,16 @@ func resolveContainerIP(inspect container.InspectResponse, network string) strin
 	// If a specific network is requested, look for it
 	if network != "" {
 		for netName, netSettings := range inspect.NetworkSettings.Networks {
-			if netName == network && netSettings.IPAddress != "" {
-				return netSettings.IPAddress
+			if netName == network && netSettings.IPAddress.IsValid() {
+				return netSettings.IPAddress.String()
 			}
 		}
 	}
 
 	// Fall back to first available network
 	for _, netSettings := range inspect.NetworkSettings.Networks {
-		if netSettings.IPAddress != "" {
-			return netSettings.IPAddress
+		if netSettings.IPAddress.IsValid() {
+			return netSettings.IPAddress.String()
 		}
 	}
 

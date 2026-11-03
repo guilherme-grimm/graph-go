@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 	"go.uber.org/zap"
 )
 
@@ -23,18 +22,15 @@ func watchEvents(ctx context.Context, cli *client.Client, onChange func(), logge
 			return nil
 		}
 
-		eventFilter := filters.NewArgs(
-			filters.Arg("type", string(events.ContainerEventType)),
-			filters.Arg("event", "start"),
-			filters.Arg("event", "stop"),
-			filters.Arg("event", "die"),
-		)
-		msgCh, errCh := cli.Events(ctx, events.ListOptions{
+		eventFilter := make(client.Filters).
+			Add("type", string(events.ContainerEventType)).
+			Add("event", "start", "stop", "die")
+		stream := cli.Events(ctx, client.EventsListOptions{
 			Filters: eventFilter,
 		})
 
 		start := time.Now()
-		err := consumeEvents(ctx, msgCh, errCh, onChange, logger)
+		err := consumeEvents(ctx, stream.Messages, stream.Err, onChange, logger)
 		if time.Since(start) > 10*time.Second {
 			backoff = time.Second // only reset if stream was stable
 		}
