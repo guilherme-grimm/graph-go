@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
+	"strings"
+	"time"
 )
 
 // SocketAccessHint explains how to fix a permission-denied connection to the
@@ -33,4 +36,24 @@ func socketHint(uid int, socket string, gid int, mode fs.FileMode, known bool) s
 		return fmt.Sprintf("uid %d cannot open %s: its mode %#o gives group %d no read/write access, so --group-add will not help; loosen the socket permissions or reach Docker through a socket proxy (DOCKER_HOST)", uid, socket, mode, gid)
 	}
 	return fmt.Sprintf("uid %d cannot open %s (group %d, mode %#o): if the process is not in that group, add --group-add %d to docker run, or group_add: [\"%d\"] in compose; otherwise check the socket's permissions", uid, socket, gid, mode, gid, gid)
+}
+
+// socketPermissionError re-dials a unix:// Docker host and returns the dial
+// error when it is a permission error, or nil otherwise. The moby client
+// replaces dial errors with message-only errors, dropping the fs.ErrPermission
+// chain that SocketAccessHint relies on; this recovers it.
+func socketPermissionError(host string) error {
+	path, ok := strings.CutPrefix(host, "unix://")
+	if !ok {
+		return nil
+	}
+	conn, err := net.DialTimeout("unix", path, time.Second)
+	if err == nil {
+		_ = conn.Close()
+		return nil
+	}
+	if errors.Is(err, fs.ErrPermission) {
+		return err
+	}
+	return nil
 }

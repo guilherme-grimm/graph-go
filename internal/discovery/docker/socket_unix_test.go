@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // unreachableSocket listens on a real Unix socket and strips its permissions,
@@ -108,6 +111,31 @@ func TestSocketHint_GroupAccess(t *testing.T) {
 			if tt.notWant != "" && strings.Contains(got, tt.notWant) {
 				t.Errorf("hint %q should not contain %q", got, tt.notWant)
 			}
+		})
+	}
+}
+
+func TestSocketPermissionError(t *testing.T) {
+	sock := unreachableSocket(t)
+
+	tests := []struct {
+		name     string
+		host     string
+		wantPerm bool
+	}{
+		{name: "unreadable unix socket", host: "unix://" + sock, wantPerm: true},
+		{name: "missing unix socket", host: "unix://" + filepath.Join(t.TempDir(), "nope.sock")},
+		{name: "non-unix host", host: "tcp://127.0.0.1:2375"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := socketPermissionError(tt.host)
+			if tt.wantPerm {
+				require.ErrorIs(t, err, fs.ErrPermission)
+				return
+			}
+			assert.NoError(t, err)
 		})
 	}
 }
