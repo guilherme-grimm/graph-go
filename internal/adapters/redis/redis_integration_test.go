@@ -70,7 +70,7 @@ func TestMain(m *testing.M) {
 	// Connect the adapter under test using host/port config path
 	testConfig = adapters.ConnectionConfig{
 		"host": host,
-		"port": uint16(port.Int()),
+		"port": port.Num(),
 	}
 
 	testAdapter = redisadapter.New(zap.NewNop().Sugar())
