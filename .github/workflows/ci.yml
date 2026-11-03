@@ -6,6 +6,21 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+# A new push to a PR supersedes the run in flight; main runs always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GO_VERSION: "1.25"
+
+# Go build caches: each job has its own key prefix, so jobs no longer race to
+# save one shared entry (the loser's cache was never saved, and the winner's
+# cached test results were replayed). Only pushes to main save; PRs restore the
+# latest main entry for their job.
 jobs:
   backend:
     name: Backend Tests
@@ -15,14 +30,34 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
-          cache-dependency-path: go.sum
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Restore Go cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-
 
       - name: Download dependencies
         run: go mod download
 
       - name: Run tests
         run: go test ./...
+
+      - name: Save Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
 
   lint:
     name: Backend Lint
@@ -32,13 +67,33 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
-          cache-dependency-path: go.sum
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Restore Go cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-lint-${{ runner.os }}-
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.6.0
+
+      - name: Save Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
 
   integration:
     name: Integration Tests
@@ -48,14 +103,40 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
-          cache-dependency-path: go.sum
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Restore Go cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-integration-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-integration-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-integration-${{ runner.os }}-
 
       - name: Download dependencies
         run: go mod download
 
+      # Runs every package that has integration-tagged tests, wherever it
+      # lives. -count=1: Go can't see container images or the Docker daemon,
+      # so a cached result here would be a test that never ran.
       - name: Run integration tests
-        run: go test -tags=integration -timeout=5m -v ./internal/adapters/...
+        run: |
+          pkgs=$(grep -rl --include='*_test.go' '^//go:build integration' . | xargs -n1 dirname | sort -u)
+          echo "Integration packages:"; echo "$pkgs"
+          go test -tags=integration -count=1 -timeout=5m -v $pkgs
+
+      - name: Save Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-integration-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
 
   frontend:
     name: Frontend Build
