@@ -89,6 +89,8 @@ docker run -d -p 8080:8080 \
 
 Open **http://localhost:8080**. Auto-discovery handles Docker containers and (when a kubeconfig or in-cluster service account points at a reachable cluster) Kubernetes resources without any config file.
 
+> **Reaching your services.** graph-go connects to each container at an address that works from where it runs. From a container on the default bridge, as above, that means services with a published port (`ports:` in Compose). To reach unpublished ones too, attach graph-go to their network: add `--network <project>_default` (or `docker network connect <project>_default <graph-go container>` for several projects). The binary and `graph-go mcp` on a Linux host reach every container directly; on macOS and Windows (Docker Desktop) they reach published ports only.
+
 For services that live outside Docker/Kubernetes (remote databases, managed cloud services), mount a config file — see [Configuration](#configuration).
 
 ---
@@ -340,7 +342,7 @@ Runs without Docker. Includes pure function tests and HTTP handler tests.
 ### Integration Tests
 
 ```bash
-go test -tags=integration -v -timeout=5m ./internal/adapters/...
+go test -tags=integration -v -timeout=5m ./...
 ```
 
 Requires Docker. Uses [testcontainers-go](https://golang.testcontainers.org/) to spin up real database instances (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, RustFS for S3) — no mocks.
@@ -360,7 +362,7 @@ go test -tags=integration -v ./internal/adapters/redis/
 
 ```bash
 make test  # unit + type-check
-go test -tags=integration -timeout=5m ./internal/adapters/...  # integration
+go test -tags=integration -timeout=5m ./...  # integration
 ```
 
 ---
