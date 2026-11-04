@@ -56,17 +56,25 @@ jobs:
           version: latest
           args: release --snapshot --clean
 
+      # Assets go into a draft first: the old nightly is only deleted once the
+      # upload has succeeded, so a failed upload can't leave no nightly at all.
       - name: Replace the nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete nightly --cleanup-tag --yes || true
-          gh release create nightly \
+          gh release delete nightly-next --yes || true
+          gh release create nightly-next \
+            --draft \
             --target "$GITHUB_SHA" \
             --prerelease --latest=false \
             --title "Nightly (${GITHUB_REF_NAME} @ ${GITHUB_SHA::7})" \
             --notes "Untested build of \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA}, published $(date -u +%Y-%m-%dT%H:%MZ). Not for production. Docker: \`ghcr.io/${{ github.repository }}:nightly\`." \
             dist/*.tar.gz dist/*.zip dist/checksums.txt
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release edit nightly-next \
+            --tag nightly \
+            --target "$GITHUB_SHA" \
+            --draft=false --latest=false
 
   docker:
     name: Build & Push Nightly Image
