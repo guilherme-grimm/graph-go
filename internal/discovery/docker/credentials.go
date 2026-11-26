@@ -3,34 +3,55 @@ package docker
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
 )
 
 // ExtractCredentials builds an adapters.ConnectionConfig from container
-// environment variables, based on the detected service type.
+// environment variables, based on the detected service type, reaching the
+// container at containerHost on the service's default port.
 func ExtractCredentials(svcType ServiceType, envVars []string, containerHost string, containerName string) adapters.ConnectionConfig {
+	return ExtractCredentialsAt(svcType, envVars, containerHost, servicePort(svcType, parseEnvVars(envVars)), containerName)
+}
+
+// ExtractCredentialsAt is ExtractCredentials with an explicit host and port,
+// for when the service is reached somewhere other than its container port
+// (a published host port, for example).
+func ExtractCredentialsAt(svcType ServiceType, envVars []string, host string, port uint16, containerName string) adapters.ConnectionConfig {
 	env := parseEnvVars(envVars)
 
 	switch svcType {
 	case TypePostgres:
-		return extractPostgresCredentials(env, containerHost)
+		return extractPostgresCredentials(env, host, port)
 	case TypeMongoDB:
-		return extractMongoCredentials(env, containerHost)
+		return extractMongoCredentials(env, host, port)
 	case TypeS3:
-		return extractS3Credentials(env, containerHost)
+		return extractS3Credentials(env, host, port)
 	case TypeRedis:
-		return extractRedisCredentials(env, containerHost)
+		return extractRedisCredentials(env, host, port)
 	case TypeMySQL:
-		return extractMySQLCredentials(env, containerHost)
+		return extractMySQLCredentials(env, host, port)
 	case TypeElasticsearch:
-		return extractElasticsearchCredentials(env, containerHost)
+		return extractElasticsearchCredentials(env, host, port)
 	case TypeHTTP:
-		return extractHTTPCredentials(env, containerHost, containerName)
+		return extractHTTPCredentials(host, port, containerName)
 	default:
 		return adapters.ConnectionConfig{}
 	}
+}
+
+// servicePort is the port the service listens on inside its container: the
+// type's default, or $PORT for HTTP services.
+func servicePort(svcType ServiceType, env map[string]string) uint16 {
+	if svcType == TypeHTTP {
+		if p, err := strconv.ParseUint(env["PORT"], 10, 16); err == nil && p > 0 {
+			return uint16(p)
+		}
+		return 8080
+	}
+	return DefaultPortForType(svcType)
 }
 
 func parseEnvVars(env []string) map[string]string {
@@ -44,34 +65,34 @@ func parseEnvVars(env []string) map[string]string {
 	return m
 }
 
-func extractPostgresCredentials(env map[string]string, host string) adapters.ConnectionConfig {
+func extractPostgresCredentials(env map[string]string, host string, port uint16) adapters.ConnectionConfig {
 	user := envOrDefault(env, "POSTGRES_USER", "postgres")
 	pass := envOrDefault(env, "POSTGRES_PASSWORD", "")
 	db := envOrDefault(env, "POSTGRES_DB", user)
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		url.QueryEscape(user), url.QueryEscape(pass), host, DefaultPortForType(TypePostgres), db)
+		url.QueryEscape(user), url.QueryEscape(pass), host, port, db)
 
 	return adapters.ConnectionConfig{"dsn": dsn}
 }
 
-func extractMongoCredentials(env map[string]string, host string) adapters.ConnectionConfig {
+func extractMongoCredentials(env map[string]string, host string, port uint16) adapters.ConnectionConfig {
 	user := envOrDefault(env, "MONGO_INITDB_ROOT_USERNAME", "")
 	pass := envOrDefault(env, "MONGO_INITDB_ROOT_PASSWORD", "")
 
 	var uri string
 	if user != "" && pass != "" {
 		uri = fmt.Sprintf("mongodb://%s:%s@%s:%d",
-			url.QueryEscape(user), url.QueryEscape(pass), host, DefaultPortForType(TypeMongoDB))
+			url.QueryEscape(user), url.QueryEscape(pass), host, port)
 	} else {
 		uri = fmt.Sprintf("mongodb://%s:%d",
-			host, DefaultPortForType(TypeMongoDB))
+			host, port)
 	}
 
 	return adapters.ConnectionConfig{"uri": uri}
 }
 
-func extractS3Credentials(env map[string]string, host string) adapters.ConnectionConfig {
+func extractS3Credentials(env map[string]string, host string, port uint16) adapters.ConnectionConfig {
 	accessKey := envOrDefault(env, "MINIO_ROOT_USER", "minioadmin")
 	secretKey := envOrDefault(env, "MINIO_ROOT_PASSWORD", "minioadmin")
 	if isRustFS(env) {
@@ -80,7 +101,7 @@ func extractS3Credentials(env map[string]string, host string) adapters.Connectio
 		accessKey = envOrDefault(env, "RUSTFS_ACCESS_KEY", envOrDefault(env, "MINIO_ROOT_USER", "rustfsadmin"))
 		secretKey = envOrDefault(env, "RUSTFS_SECRET_KEY", envOrDefault(env, "MINIO_ROOT_PASSWORD", "rustfsadmin"))
 	}
-	endpoint := fmt.Sprintf("http://%s:%d", host, DefaultPortForType(TypeS3))
+	endpoint := fmt.Sprintf("http://%s:%d", host, port)
 
 	return adapters.ConnectionConfig{
 		"endpoint":          endpoint,
@@ -90,9 +111,8 @@ func extractS3Credentials(env map[string]string, host string) adapters.Connectio
 	}
 }
 
-func extractRedisCredentials(env map[string]string, host string) adapters.ConnectionConfig {
+func extractRedisCredentials(env map[string]string, host string, port uint16) adapters.ConnectionConfig {
 	pass := envOrDefault(env, "REDIS_PASSWORD", "")
-	port := DefaultPortForType(TypeRedis)
 
 	cfg := adapters.ConnectionConfig{
 		"host": host,
@@ -104,9 +124,8 @@ func extractRedisCredentials(env map[string]string, host string) adapters.Connec
 	return cfg
 }
 
-func extractHTTPCredentials(env map[string]string, host string, containerName string) adapters.ConnectionConfig {
-	port := envOrDefault(env, "PORT", "8080")
-	endpoint := fmt.Sprintf("http://%s:%s", host, port)
+func extractHTTPCredentials(host string, port uint16, containerName string) adapters.ConnectionConfig {
+	endpoint := fmt.Sprintf("http://%s:%d", host, port)
 
 	return adapters.ConnectionConfig{
 		"endpoint":    endpoint,
@@ -115,7 +134,7 @@ func extractHTTPCredentials(env map[string]string, host string, containerName st
 	}
 }
 
-func extractMySQLCredentials(env map[string]string, host string) adapters.ConnectionConfig {
+func extractMySQLCredentials(env map[string]string, host string, port uint16) adapters.ConnectionConfig {
 	user := envOrDefault(env, "MYSQL_USER", "root")
 	pass := envOrDefault(env, "MYSQL_ROOT_PASSWORD", "")
 	if pass == "" {
@@ -124,13 +143,13 @@ func extractMySQLCredentials(env map[string]string, host string) adapters.Connec
 	db := envOrDefault(env, "MYSQL_DATABASE", "")
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-		user, url.QueryEscape(pass), host, DefaultPortForType(TypeMySQL), db)
+		user, url.QueryEscape(pass), host, port, db)
 
 	return adapters.ConnectionConfig{"dsn": dsn}
 }
 
-func extractElasticsearchCredentials(env map[string]string, host string) adapters.ConnectionConfig {
-	endpoint := fmt.Sprintf("http://%s:%d", host, DefaultPortForType(TypeElasticsearch))
+func extractElasticsearchCredentials(env map[string]string, host string, port uint16) adapters.ConnectionConfig {
+	endpoint := fmt.Sprintf("http://%s:%d", host, port)
 
 	cfg := adapters.ConnectionConfig{
 		"endpoint": endpoint,

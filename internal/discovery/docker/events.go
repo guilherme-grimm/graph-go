@@ -10,9 +10,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// watchEvents subscribes to Docker container start/stop/die events and
-// invokes onChange for each one. It reconnects with exponential backoff
-// and returns only when ctx is cancelled.
+// watchEvents subscribes to Docker container start/stop/die and network
+// connect/disconnect events and invokes onChange for each one. It
+// reconnects with exponential backoff and returns only when ctx is
+// cancelled.
 func watchEvents(ctx context.Context, cli *client.Client, onChange func(), logger *zap.SugaredLogger) error {
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
@@ -22,9 +23,11 @@ func watchEvents(ctx context.Context, cli *client.Client, onChange func(), logge
 			return nil
 		}
 
+		// A network connect/disconnect changes which address a container,
+		// or graph-go itself, is reachable at.
 		eventFilter := make(client.Filters).
-			Add("type", string(events.ContainerEventType)).
-			Add("event", "start", "stop", "die")
+			Add("type", string(events.ContainerEventType), string(events.NetworkEventType)).
+			Add("event", "start", "stop", "die", "connect", "disconnect")
 		stream := cli.Events(ctx, client.EventsListOptions{
 			Filters: eventFilter,
 		})

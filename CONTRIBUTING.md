@@ -61,6 +61,9 @@ make build              # Build the embedded production binary
 make build-backend-only # Skip frontend rebuild (fast Go iteration)
 make test               # Unit tests + TS type-check
 make lint               # golangci-lint
+make lint-ci            # CI's pinned golangci-lint, in Docker
+make smoke              # End-to-end: binary, MCP and image against real containers
+make smoke-fast         # Same, without the Docker image (quicker loop)
 ```
 
 ---
@@ -84,7 +87,7 @@ make lint               # golangci-lint
 ```bash
 go fmt ./... && go vet ./...
 go test ./...                                                    # unit tests
-go test -tags=integration -timeout=5m ./internal/adapters/...    # integration tests (requires Docker)
+go test -tags=integration -timeout=5m ./...                      # integration tests (requires Docker)
 cd webui && npx tsc --noEmit
 ```
 
@@ -96,8 +99,9 @@ cd webui && npx tsc --noEmit
 
 - [ ] `make lint` passes
 - [ ] `make test` passes
-- [ ] `go test -tags=integration -timeout=5m ./internal/adapters/...` passes (if touching adapters)
+- [ ] `go test -tags=integration -timeout=5m ./...` passes (if touching adapters or discovery)
 - [ ] `npx tsc --noEmit` passes
+- [ ] `make smoke` passes (requires Docker and `jq`; `make smoke-fast` skips the image while iterating). It runs the built binary, `graph-go mcp` and the Docker image against two throwaway Compose projects, the way users run them, and catches what unit and integration tests can't: "works in the demo, sees nothing on my host"
 - [ ] Commit messages use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`)
 - [ ] Commits are signed and show GitHub's **Verified** badge (see [Signing Commits](#signing-commits))
 - [ ] New adapters include discovery logic, health checks, **and integration tests**

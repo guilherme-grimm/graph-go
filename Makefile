@@ -1,7 +1,7 @@
 .PHONY: help install install-backend install-frontend \
 	dev run-backend run-frontend watch-backend \
 	build build-backend build-backend-only build-frontend \
-	test test-backend test-frontend lint clean \
+	test test-backend test-frontend lint lint-ci smoke smoke-fast clean \
 	docker-build docker-up docker-down docker-logs docker-clean
 
 COMPOSE_FILE := docker-compose.demo.yml
@@ -109,6 +109,20 @@ test-frontend:
 lint:
 	@echo "Running golangci-lint..."
 	@golangci-lint run ./...
+
+## lint-ci: Run CI's pinned golangci-lint in Docker (works when the local toolchain is newer than the linter)
+GOLANGCI_LINT_VERSION := $(shell sed -n 's/.*version: \(v[0-9.]*\).*/\1/p' .github/workflows/ci.yml | head -1)
+lint-ci:
+	@docker run --rm -v "$(CURDIR)":/app -v "$$(go env GOMODCACHE)":/go/pkg/mod -w /app \
+		golangci/golangci-lint:$(GOLANGCI_LINT_VERSION) golangci-lint run ./...
+
+## smoke: End-to-end run of the binary, MCP and image against real containers (run before opening a PR)
+smoke:
+	@hack/smoke/smoke.sh
+
+## smoke-fast: smoke without building and running the Docker image
+smoke-fast:
+	@SMOKE_IMAGE=0 hack/smoke/smoke.sh
 
 ## clean: Remove build artifacts and dependencies
 clean:

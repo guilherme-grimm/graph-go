@@ -59,6 +59,9 @@ type DockerDiscovery struct {
 	client *client.Client
 	cfg    DockerDiscoveryConfig
 	logger *zap.SugaredLogger
+	// self is where graph-go runs, detected in NewDockerDiscovery and not
+	// modified afterwards: Discover works on a copy with refreshed networks.
+	self selfContext
 }
 
 // Compile-time check that DockerDiscovery satisfies discovery.Discoverer.
@@ -99,7 +102,10 @@ func NewDockerDiscovery(cfg DockerDiscoveryConfig, logger *zap.SugaredLogger) (*
 		return nil, fmt.Errorf("discovery: failed to ping Docker daemon: %w", err)
 	}
 
-	return &DockerDiscovery{client: cli, cfg: cfg, logger: logger}, nil
+	self := detectSelf(context.Background(), cli)
+	logger.Debugw("docker: graph-go location", "in_container", self.InContainer, "container", truncateID(self.ContainerID), "networks", sortedKeys(self.Networks))
+
+	return &DockerDiscovery{client: cli, cfg: cfg, logger: logger, self: self}, nil
 }
 
 // Close releases the Docker client resources.
@@ -124,9 +130,14 @@ func (d *DockerDiscovery) Discover(ctx context.Context) ([]discovery.ServiceInfo
 		return nil, fmt.Errorf("discovery: failed to list containers: %w", err)
 	}
 
+	self, err := refreshSelf(ctx, d.client, d.self)
+	if err != nil {
+		d.logger.Warnw("docker: failed to refresh own networks, using the ones from startup", "container", truncateID(d.self.ContainerID), "err", err)
+	}
+
 	found := make([]DiscoveredService, 0, len(res.Items))
 	for _, ctr := range res.Items {
-		svc, ok := d.processContainer(ctx, ctr)
+		svc, ok := d.processContainer(ctx, ctr, self)
 		if !ok {
 			continue
 		}
@@ -151,7 +162,8 @@ func (d *DockerDiscovery) Discover(ctx context.Context) ([]discovery.ServiceInfo
 	return services, nil
 }
 
-// Watch subscribes to Docker container start/stop/die events and invokes
+// Watch subscribes to Docker container start/stop/die and network
+// connect/disconnect events and invokes
 // onChange for each one, debounced to collapse bursts (e.g. docker-compose up
 // starting many containers at once). It blocks until ctx is cancelled.
 func (d *DockerDiscovery) Watch(ctx context.Context, onChange func()) error {
@@ -162,10 +174,10 @@ func (d *DockerDiscovery) Watch(ctx context.Context, onChange func()) error {
 
 // processContainer inspects one container and turns it into a
 // DiscoveredService: it applies the ignore label and image list, classifies
-// the image, resolves host and IP, and extracts credentials plus label
+// the image, resolves the address to reach it at, and extracts credentials plus label
 // overrides. The bool is false when the container is skipped or can't be
 // inspected.
-func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Summary) (DiscoveredService, bool) {
+func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Summary, self selfContext) (DiscoveredService, bool) {
 	// Inspect for full details (env vars, network settings)
 	res, err := d.client.ContainerInspect(ctx, ctr.ID, client.ContainerInspectOptions{})
 	if err != nil {
@@ -173,6 +185,11 @@ func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Su
 		return DiscoveredService{}, false
 	}
 	inspect := res.Container
+
+	// graph-go's own container isn't part of the infrastructure it maps.
+	if self.ContainerID != "" && ctr.ID == self.ContainerID {
+		return DiscoveredService{}, false
+	}
 
 	labels := ctr.Labels
 	if labels == nil {
@@ -195,15 +212,16 @@ func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Su
 	// 4. Classify image
 	svcType := ClassifyImage(ctr.Image)
 
-	// 5. Resolve container hostname
-	host := resolveContainerHost(inspect, d.cfg.Network)
-
-	// 6. Extract credentials
+	// 5. Resolve where graph-go reaches the service from where it runs
 	var envVars []string
 	if inspect.Config != nil {
 		envVars = inspect.Config.Env
 	}
-	connCfg := ExtractCredentials(svcType, envVars, host, name)
+	addr := resolveAddress(inspect, servicePort(svcType, parseEnvVars(envVars)), d.cfg.Network, self, runtime.GOOS)
+	d.logger.Debugw("docker: resolved address", "container", name, "host", addr.Host, "port", addr.Port, "via", addr.Via)
+
+	// 6. Extract credentials
+	connCfg := ExtractCredentialsAt(svcType, envVars, addr.Host, addr.Port, name)
 
 	// 7. Apply label overrides
 	svcType, connCfg = ApplyLabelOverrides(labels, svcType, connCfg)
@@ -296,20 +314,6 @@ func containerName(names []string) string {
 		return ""
 	}
 	return strings.TrimPrefix(names[0], "/")
-}
-
-// resolveContainerHost returns the hostname for connecting to the container.
-// Prefers the Compose service name, then IP address on the specified network,
-// then the first available network IP.
-func resolveContainerHost(inspect container.InspectResponse, network string) string {
-	// Prefer Compose service name as hostname (Docker DNS)
-	if inspect.Config != nil && inspect.Config.Labels != nil {
-		if svc, ok := inspect.Config.Labels[labelComposeService]; ok && svc != "" {
-			return svc
-		}
-	}
-
-	return resolveContainerIP(inspect, network)
 }
 
 // resolveContainerIP returns the container's IP address, preferring the
