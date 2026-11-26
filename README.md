@@ -51,7 +51,7 @@ Use these to rescue misclassified containers, point graph-go at a custom DSN, or
 
 ## Quick Start — try it in 30 seconds
 
-Boot the seeded demo stack with the CLI. This is the fastest way to see graph-go against a realistic environment and the intended onboarding path for first-time users:
+Boot the seeded demo stack with the CLI. This is the fastest way to see graph-go against a realistic environment and the intended onboarding path for first-time users. You need Docker with Compose and Go 1.25.6+. An older Go downloads the right toolchain on its own unless `GOTOOLCHAIN=local` is set, as in some distro packages.
 
 ```bash
 git clone https://github.com/guilherme-grimm/graph-go.git
