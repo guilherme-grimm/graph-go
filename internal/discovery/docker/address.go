@@ -17,7 +17,7 @@ import (
 
 // selfContext describes where graph-go itself runs, so each container can be
 // reached at an address that works from there. NewDockerDiscovery detects it
-// once at startup.
+// at startup; Discover refreshes Networks on every pass.
 type selfContext struct {
 	// InContainer is true when graph-go runs inside a container.
 	InContainer bool
@@ -202,17 +202,38 @@ func detectSelf(ctx context.Context, cli *client.Client) selfContext {
 			continue
 		}
 		self.ContainerID = res.Container.ID
-		self.Networks = map[string]netip.Addr{}
-		if ns := res.Container.NetworkSettings; ns != nil {
-			for name, ep := range ns.Networks {
-				if ep != nil {
-					self.Networks[name] = ep.Gateway
-				}
-			}
-		}
+		self.Networks = selfNetworks(res.Container)
 		break
 	}
 	return self
+}
+
+// refreshSelf re-reads the networks graph-go's container is attached to, so
+// a `docker network connect` after startup is picked up on the next
+// discovery pass. On error the given networks are returned unchanged.
+func refreshSelf(ctx context.Context, cli *client.Client, self selfContext) (selfContext, error) {
+	if self.ContainerID == "" {
+		return self, nil
+	}
+	res, err := cli.ContainerInspect(ctx, self.ContainerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return self, err
+	}
+	self.Networks = selfNetworks(res.Container)
+	return self, nil
+}
+
+// selfNetworks maps each network of graph-go's container onto its gateway.
+func selfNetworks(inspect container.InspectResponse) map[string]netip.Addr {
+	nets := map[string]netip.Addr{}
+	if ns := inspect.NetworkSettings; ns != nil {
+		for name, ep := range ns.Networks {
+			if ep != nil {
+				nets[name] = ep.Gateway
+			}
+		}
+	}
+	return nets
 }
 
 // inContainer reports whether the process runs in a Docker or Podman

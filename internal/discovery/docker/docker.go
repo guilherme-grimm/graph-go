@@ -59,8 +59,8 @@ type DockerDiscovery struct {
 	client *client.Client
 	cfg    DockerDiscoveryConfig
 	logger *zap.SugaredLogger
-	// self is where graph-go runs, detected once in NewDockerDiscovery; it
-	// decides which address each container is reached at.
+	// self is where graph-go runs, detected in NewDockerDiscovery and not
+	// modified afterwards: Discover works on a copy with refreshed networks.
 	self selfContext
 }
 
@@ -130,9 +130,14 @@ func (d *DockerDiscovery) Discover(ctx context.Context) ([]discovery.ServiceInfo
 		return nil, fmt.Errorf("discovery: failed to list containers: %w", err)
 	}
 
+	self, err := refreshSelf(ctx, d.client, d.self)
+	if err != nil {
+		d.logger.Warnw("docker: failed to refresh own networks, using the ones from startup", "container", truncateID(d.self.ContainerID), "err", err)
+	}
+
 	found := make([]DiscoveredService, 0, len(res.Items))
 	for _, ctr := range res.Items {
-		svc, ok := d.processContainer(ctx, ctr)
+		svc, ok := d.processContainer(ctx, ctr, self)
 		if !ok {
 			continue
 		}
@@ -157,7 +162,8 @@ func (d *DockerDiscovery) Discover(ctx context.Context) ([]discovery.ServiceInfo
 	return services, nil
 }
 
-// Watch subscribes to Docker container start/stop/die events and invokes
+// Watch subscribes to Docker container start/stop/die and network
+// connect/disconnect events and invokes
 // onChange for each one, debounced to collapse bursts (e.g. docker-compose up
 // starting many containers at once). It blocks until ctx is cancelled.
 func (d *DockerDiscovery) Watch(ctx context.Context, onChange func()) error {
@@ -171,7 +177,7 @@ func (d *DockerDiscovery) Watch(ctx context.Context, onChange func()) error {
 // the image, resolves the address to reach it at, and extracts credentials plus label
 // overrides. The bool is false when the container is skipped or can't be
 // inspected.
-func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Summary) (DiscoveredService, bool) {
+func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Summary, self selfContext) (DiscoveredService, bool) {
 	// Inspect for full details (env vars, network settings)
 	res, err := d.client.ContainerInspect(ctx, ctr.ID, client.ContainerInspectOptions{})
 	if err != nil {
@@ -181,7 +187,7 @@ func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Su
 	inspect := res.Container
 
 	// graph-go's own container isn't part of the infrastructure it maps.
-	if d.self.ContainerID != "" && ctr.ID == d.self.ContainerID {
+	if self.ContainerID != "" && ctr.ID == self.ContainerID {
 		return DiscoveredService{}, false
 	}
 
@@ -211,7 +217,7 @@ func (d *DockerDiscovery) processContainer(ctx context.Context, ctr container.Su
 	if inspect.Config != nil {
 		envVars = inspect.Config.Env
 	}
-	addr := resolveAddress(inspect, servicePort(svcType, parseEnvVars(envVars)), d.cfg.Network, d.self, runtime.GOOS)
+	addr := resolveAddress(inspect, servicePort(svcType, parseEnvVars(envVars)), d.cfg.Network, self, runtime.GOOS)
 	d.logger.Debugw("docker: resolved address", "container", name, "host", addr.Host, "port", addr.Port, "via", addr.Via)
 
 	// 6. Extract credentials
