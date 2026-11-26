@@ -127,6 +127,7 @@ jobs:
         run: |
           pkgs=$(grep -rl --include='*_test.go' '^//go:build integration' . | xargs -n1 dirname | sort -u)
           echo "Integration packages:"; echo "$pkgs"
+          # shellcheck disable=SC2086 # one package per word
           go test -tags=integration -count=1 -timeout=5m -v $pkgs
 
       - name: Save Go cache
