@@ -121,6 +121,25 @@ func TestDiscoverAll_CollidingWithTopologyQualifiesTheAdapter(t *testing.T) {
 	assert.Equal(t, "database", byID["pg-shop@db"].Type)
 }
 
+func TestDiscoverAll_ServiceIDsStayAndQualifyTheAdapter(t *testing.T) {
+	reg := adapters.NewRegistry(zap.NewNop().Sugar())
+	require.NoError(t, reg.Register("db", "postgres", shopDB(), adapters.ConnectionConfig{}))
+	require.NoError(t, reg.Register("down", "postgres", &stubAdapter{discoverErr: assert.AnError}, adapters.ConnectionConfig{}))
+	for _, name := range []string{"service-db", "service-down"} {
+		http := &stubAdapter{discoverN: []nodes.Node{{Id: name, Type: "service", Name: name}}}
+		require.NoError(t, reg.Register(name, "http", http, adapters.ConnectionConfig{}))
+	}
+
+	g, err := reg.DiscoverAll()
+	require.NoError(t, err)
+	byID := requireConsistent(t, g)
+
+	assert.Equal(t, "postgres", byID["service-db"].Type, "registry service ids are never rewritten")
+	assert.Equal(t, "unhealthy", byID["service-down"].Health)
+	assert.Equal(t, "service", byID["service-db@service-db"].Type)
+	assert.Equal(t, "service", byID["service-down@service-down"].Type)
+}
+
 // withDB is what the Postgres adapter emits for a lone database named db,
 // which may contain `@`.
 func withDB(db string) *stubAdapter {

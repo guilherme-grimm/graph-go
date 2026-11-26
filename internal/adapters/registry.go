@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -241,7 +242,15 @@ func (r *registry) DiscoverAll() (*graph.Graph, error) {
 		}
 
 		topoN, topoE := r.snapshotTopology()
-		qualifyCollidingIDs(results, topoN, topoE)
+		// Service nodes the registry makes keep their IDs, like topology
+		// ones: an adapter emitting one of those IDs is qualified instead.
+		fixed := append(slices.Clone(topoN), allNodes...) // failed services
+		for _, res := range results {
+			if res.connType != "http" {
+				fixed = append(fixed, nodes.Node{Id: fmt.Sprintf("service-%s", res.name)})
+			}
+		}
+		qualifyCollidingIDs(results, fixed, topoE)
 
 		for _, res := range results {
 			n, edg := res.nodes, res.edges

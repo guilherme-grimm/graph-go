@@ -20,19 +20,19 @@ type adapterResult struct {
 // Adapters build IDs from what they find, not from which server they found
 // it on, so two Postgres servers that both have a `shop` database both emit
 // `pg-shop` (#62). Every ID that more than one adapter emits, or that a
-// topology contribution already uses, becomes `<id>@<adapter>` in each
-// adapter that emits it, and that adapter's parent refs and edge endpoints
-// follow. `@` is legal in the names IDs are built from (a table can be named
+// fixed node (topology contribution or registry service node) already uses,
+// becomes `<id>@<adapter>` in each adapter that emits it, and that adapter's
+// parent refs and edge endpoints follow. `@` is legal in the names IDs are built from (a table can be named
 // `orders@trader.db`), so a qualified ID that is already taken gets a `#<n>`
 // suffix. Unique IDs are left alone, so the common single-server case, and
 // any depends_on targets and links that name those IDs, keep working. The
 // result depends only on the set of results, not on their order.
-func qualifyCollidingIDs(results []adapterResult, topoNodes []nodes.Node, topoEdges []edges.Edge) {
+func qualifyCollidingIDs(results []adapterResult, fixedNodes []nodes.Node, topoEdges []edges.Edge) {
 	nodeOwners := map[string]int{}
 	edgeOwners := map[string]int{}
 	takenNodes := map[string]bool{}
 	takenEdges := map[string]bool{}
-	for _, n := range topoNodes {
+	for _, n := range fixedNodes {
 		nodeOwners[n.Id]++
 		takenNodes[n.Id] = true
 	}
