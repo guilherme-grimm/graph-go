@@ -120,3 +120,70 @@ func TestDiscoverAll_CollidingWithTopologyQualifiesTheAdapter(t *testing.T) {
 	assert.Equal(t, "pod", byID["pg-shop"].Type, "topology ids are never rewritten")
 	assert.Equal(t, "database", byID["pg-shop@db"].Type)
 }
+
+// withDB is what the Postgres adapter emits for a lone database named db,
+// which may contain `@`.
+func withDB(db string) *stubAdapter {
+	return &stubAdapter{discoverN: []nodes.Node{{Id: "pg-" + db, Type: "database", Name: db}}}
+}
+
+// forged is shopDB plus a table and an FK edge whose IDs equal what
+// trader.db's colliding IDs would be qualified to.
+func forged() *stubAdapter {
+	a := shopDB("orders@trader.db")
+	a.discoverE = append(a.discoverE, edges.Edge{
+		Id: "pg-fk-orders-customers@trader.db", Source: "pg-shop-orders@trader.db", Target: "pg-shop-customers", Type: "foreign_key",
+	})
+	return a
+}
+
+func TestDiscoverAll_QualifiedIDsNeverReuseABareID(t *testing.T) {
+	tests := []struct {
+		name      string
+		regs      map[string]*stubAdapter
+		wantNodes map[string]string    // id → parent
+		wantEdges map[string][2]string // id → source, target
+	}{
+		{
+			name: "database named like a qualified id",
+			regs: map[string]*stubAdapter{"a": withDB("shop@b"), "b": withDB("shop"), "c": withDB("shop")},
+			wantNodes: map[string]string{
+				"pg-shop@b":   "service-a",
+				"pg-shop@b#2": "service-b",
+				"pg-shop@c":   "service-c",
+			},
+		},
+		{
+			name: "table and fk named like a qualified id",
+			regs: map[string]*stubAdapter{"trader.db": shopDB(), "hostile.db": forged()},
+			wantNodes: map[string]string{
+				"pg-shop-orders@trader.db":   "pg-shop@hostile.db",
+				"pg-shop-orders@trader.db#2": "pg-shop@trader.db",
+				"pg-shop-orders@hostile.db":  "pg-shop@hostile.db",
+			},
+			wantEdges: map[string][2]string{
+				"pg-fk-orders-customers@trader.db":   {"pg-shop-orders@trader.db", "pg-shop-customers@hostile.db"},
+				"pg-fk-orders-customers@trader.db#2": {"pg-shop-orders@trader.db#2", "pg-shop-customers@trader.db"},
+				"pg-fk-orders-customers@hostile.db":  {"pg-shop-orders@hostile.db", "pg-shop-customers@hostile.db"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := discoverAll(t, tt.regs)
+			byID := requireConsistent(t, g)
+			for id, parent := range tt.wantNodes {
+				require.Contains(t, byID, id)
+				assert.Equal(t, parent, byID[id].Parent, "node %s parent", id)
+			}
+			edgeByID := map[string]edges.Edge{}
+			for _, e := range g.Edges {
+				edgeByID[e.Id] = e
+			}
+			for id, ends := range tt.wantEdges {
+				require.Contains(t, edgeByID, id)
+				assert.Equal(t, ends, [2]string{edgeByID[id].Source, edgeByID[id].Target}, "edge %s", id)
+			}
+		})
+	}
+}
