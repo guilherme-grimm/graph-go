@@ -177,7 +177,7 @@ else
 		shift
 		docker run --rm --name "$SELF_NAME" "$@" \
 			-v /var/run/docker.sock:/var/run/docker.sock:ro --group-add "$gid" \
-			"$IMAGE" ./graph-go scan --format json --log-level=error >"$out" || true
+			"$IMAGE" scan --format json --log-level=error >"$out" || true
 	}
 
 	step "image: default bridge (README docker run)"
