@@ -51,7 +51,7 @@ Use these to rescue misclassified containers, point graph-go at a custom DSN, or
 
 ## Quick Start — try it in 30 seconds
 
-Boot the seeded demo stack with the CLI. This is the fastest way to see graph-go against a realistic environment and the intended onboarding path for first-time users:
+Boot the seeded demo stack with the CLI. This is the fastest way to see graph-go against a realistic environment and the intended onboarding path for first-time users. You need Docker with Compose and Go 1.25.6+. Go 1.21+ downloads the right toolchain on its own unless `GOTOOLCHAIN` is `local` or `path`, as in some distro packages.
 
 ```bash
 git clone https://github.com/guilherme-grimm/graph-go.git
@@ -101,9 +101,11 @@ For services that live outside Docker/Kubernetes (remote databases, managed clou
 Single self-contained binary — UI is embedded, but the entrypoint is still the CLI.
 
 ```bash
-# Linux amd64 (requires the GitHub CLI; browse Releases for other platforms)
-gh release download --repo guilherme-grimm/graph-go --pattern 'graph-go_*_linux_amd64.tar.gz' --clobber
-tar xzf graph-go_*_linux_amd64.tar.gz
+# Linux amd64 (browse Releases for other platforms)
+curl -fsSL https://github.com/guilherme-grimm/graph-go/releases/download/v0.4.0/graph-go_0.4.0_linux_amd64.tar.gz | tar xz
+# or always the latest release, with a logged-in GitHub CLI (`gh auth login`):
+#   gh release download --repo guilherme-grimm/graph-go --pattern 'graph-go_*_linux_amd64.tar.gz' --clobber && tar xzf graph-go_*_linux_amd64.tar.gz
+
 ./graph-go serve   # or just `./graph-go` - same thing
 ```
 
