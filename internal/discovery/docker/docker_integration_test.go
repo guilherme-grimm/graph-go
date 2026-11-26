@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -79,10 +80,19 @@ func TestDiscover_AddressesReachableFromHost(t *testing.T) {
 		}
 		if publish {
 			opts = append(opts, testcontainers.WithExposedPorts("6379/tcp"))
+		} else {
+			// With no exposed ports testcontainers publishes the image's
+			// (6379), so expose an unused port to keep 6379 unbound.
+			opts = append(opts, testcontainers.WithExposedPorts("16379/tcp"))
 		}
 		ctr, err := testcontainers.Run(ctx, "redis:7-alpine", opts...)
 		testcontainers.CleanupContainer(t, ctr)
 		require.NoError(t, err)
+		if !publish {
+			inspect, err := ctr.Inspect(ctx)
+			require.NoError(t, err)
+			require.Empty(t, inspect.NetworkSettings.Ports[network.MustParsePort("6379/tcp")], "%s: 6379 must not be published", service)
+		}
 		return ctr.GetContainerID()
 	}
 	ids := map[string]string{
