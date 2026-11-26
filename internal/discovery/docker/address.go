@@ -126,6 +126,12 @@ func publishedAddress(inspect container.InspectResponse, port uint16, self selfC
 		if err != nil || hostPort == 0 {
 			continue
 		}
+		// An IPv6 binding (including the "::" wildcard) may have no IPv4
+		// listener behind it, so it must not be mapped to 127.0.0.1 or the
+		// gateway. Skipping it lets an IPv4 binding or the fallbacks win.
+		if b.HostIP.IsValid() && !b.HostIP.Unmap().Is4() {
+			continue
+		}
 		wildcard := !b.HostIP.IsValid() || b.HostIP.IsUnspecified()
 		switch {
 		case !self.InContainer && wildcard:

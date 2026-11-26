@@ -89,6 +89,24 @@ func TestResolveAddress(t *testing.T) {
 			want: address{Host: "172.20.0.3", Port: 5432, Via: viaContainerIP},
 		},
 		{
+			name: "host, published on the IPv6 wildcard only: binding skipped",
+			in:   target("db", map[string]string{"trader_default": "172.20.0.3"}, binding{"::", "55432"}),
+			self: host, goos: "linux",
+			want: address{Host: "172.20.0.3", Port: 5432, Via: viaContainerIP},
+		},
+		{
+			name: "host, published on both wildcards, IPv6 listed first: the IPv4 binding",
+			in:   target("db", map[string]string{"trader_default": "172.20.0.3"}, binding{"::", "55433"}, binding{"0.0.0.0", "55432"}),
+			self: host, goos: "linux",
+			want: address{Host: "127.0.0.1", Port: 55432, Via: viaPublishedPort},
+		},
+		{
+			name: "in container, published on the IPv6 wildcard only: not via the gateway",
+			in:   target("db", map[string]string{"trader_default": "172.20.0.3"}, binding{"::", "55432"}),
+			self: inNet("bridge"), goos: "linux",
+			want: address{Host: "db", Port: 5432, Via: viaServiceName},
+		},
+		{
 			// Docker Desktop: bridge IPs aren't routable from macOS.
 			name: "host, darwin, unpublished: service name as the last resort",
 			in:   target("db", map[string]string{"trader_default": "172.20.0.3"}),
