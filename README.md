@@ -179,7 +179,7 @@ claude mcp add graph-go -- graph-go mcp --config /path/to/config.yaml
       "args": ["run", "-i", "--rm",
                "-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
                "--group-add", "<docker socket gid>",
-               "ghcr.io/guilherme-grimm/graph-go:latest", "./graph-go", "mcp"]
+               "ghcr.io/guilherme-grimm/graph-go:latest", "mcp"]
     }
   }
 }
