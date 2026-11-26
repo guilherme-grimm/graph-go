@@ -103,11 +103,10 @@ Single self-contained binary — UI is embedded, but the entrypoint is still the
 ```bash
 # Linux amd64 (browse Releases for other platforms)
 curl -fsSL https://github.com/guilherme-grimm/graph-go/releases/download/v0.4.0/graph-go_0.4.0_linux_amd64.tar.gz | tar xz
-./graph-go serve   # or just `./graph-go` - same thing
+# or always the latest release, with a logged-in GitHub CLI (`gh auth login`):
+#   gh release download --repo guilherme-grimm/graph-go --pattern 'graph-go_*_linux_amd64.tar.gz' --clobber && tar xzf graph-go_*_linux_amd64.tar.gz
 
-# or always the latest release, with a logged-in GitHub CLI (`gh auth login`)
-gh release download --repo guilherme-grimm/graph-go --pattern 'graph-go_*_linux_amd64.tar.gz' --clobber
-tar xzf graph-go_*_linux_amd64.tar.gz
+./graph-go serve   # or just `./graph-go` - same thing
 ```
 
 Open **http://localhost:8080**. Other platforms on the [Releases page](https://github.com/guilherme-grimm/graph-go/releases).
