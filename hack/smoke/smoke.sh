@@ -132,12 +132,14 @@ mcp_send '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 listed=$(mcp_recv 2 || true)
 tools=$(jq -r '[.result.tools[].name] | sort | join(",")' <<<"$listed" 2>/dev/null || true)
 if [[ "$tools" == "find_nodes,get_node,get_topology" ]]; then pass "mcp: tools $tools"; else fail "mcp: tools '${tools}'"; fi
-mcp_send '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"find_nodes","arguments":{"query":"ggsmoke-a.pg"}}}'
+# Query the published cache: the unpublished pg isn't reachable from a
+# Docker Desktop host, so it would never be in the graph there.
+mcp_send '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"find_nodes","arguments":{"query":"ggsmoke-a.cache"}}}'
 found=$(mcp_recv 3 || true)
-if jq -e '(.result.isError | not) and (.result | tostring | contains("service-ggsmoke-a.pg"))' <<<"$found" >/dev/null 2>&1; then
+if jq -e '(.result.isError | not) and (.result | tostring | contains("service-ggsmoke-a.cache"))' <<<"$found" >/dev/null 2>&1; then
 	pass "mcp: find_nodes returns the fixture"
 else
-	fail "mcp: find_nodes did not return service-ggsmoke-a.pg"
+	fail "mcp: find_nodes did not return service-ggsmoke-a.cache"
 fi
 exec {MCP[1]}>&-
 wait "$MCP_PID" 2>/dev/null || true
