@@ -42,8 +42,10 @@ for tool in docker go jq; do
 	command -v "$tool" >/dev/null || { echo "smoke: $tool is required" >&2; exit 2; }
 done
 
+OUT=$(mktemp -d) # scan/build outputs; removed on exit, even with SMOKE_KEEP=1
 cleanup() {
 	docker rm -f "$SELF_NAME" >/dev/null 2>&1 || true
+	rm -rf "$OUT"
 	if [[ "${SMOKE_KEEP:-0}" != 1 ]]; then
 		for p in "${PROJECTS[@]}"; do
 			docker compose -p "$p" -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
@@ -96,14 +98,14 @@ check_graph() {
 }
 
 step "host: graph-go scan"
-"$BIN" scan --format json --log-level=error >/tmp/ggsmoke-host.json || true
+"$BIN" scan --format json --log-level=error >"$OUT/host.json" || true
 # pg is deliberately unpublished. A Linux host reaches it by container IP;
 # Docker Desktop (macOS, Windows) can't route to container IPs, so there only
 # the published caches are reachable, as the README documents.
 if [[ "$(uname -s)" == Linux ]]; then
-	check_graph host /tmp/ggsmoke-host.json ggsmoke-a.pg ggsmoke-b.pg ggsmoke-a.cache ggsmoke-b.cache
+	check_graph host "$OUT/host.json" ggsmoke-a.pg ggsmoke-b.pg ggsmoke-a.cache ggsmoke-b.cache
 else
-	check_graph host /tmp/ggsmoke-host.json ggsmoke-a.cache ggsmoke-b.cache
+	check_graph host "$OUT/host.json" ggsmoke-a.cache ggsmoke-b.cache
 fi
 
 step "host: graph-go mcp"
@@ -144,8 +146,8 @@ if [[ "${SMOKE_IMAGE:-1}" == 0 ]]; then
 	step "image: skipped (SMOKE_IMAGE=0)"
 else
 	step "image: docker build"
-	if ! docker build -q -t "$IMAGE" . >/tmp/ggsmoke-build.log 2>&1; then
-		tail -30 /tmp/ggsmoke-build.log
+	if ! docker build -q -t "$IMAGE" . >"$OUT/build.log" 2>&1; then
+		tail -30 "$OUT/build.log"
 		echo "smoke: image build failed" >&2
 		exit 2
 	fi
@@ -161,18 +163,18 @@ else
 	}
 
 	step "image: default bridge (README docker run)"
-	run_image /tmp/ggsmoke-bridge.json
+	run_image "$OUT/bridge.json"
 	# pg isn't published, so from the default bridge only the caches are reachable.
-	check_graph bridge /tmp/ggsmoke-bridge.json ggsmoke-a.cache ggsmoke-b.cache
-	if jq -e --arg n "$SELF_NAME" 'any((.data // .).nodes[]; .name == $n)' /tmp/ggsmoke-bridge.json >/dev/null; then
+	check_graph bridge "$OUT/bridge.json" ggsmoke-a.cache ggsmoke-b.cache
+	if jq -e --arg n "$SELF_NAME" 'any((.data // .).nodes[]; .name == $n)' "$OUT/bridge.json" >/dev/null; then
 		fail "bridge: graph-go lists its own container"
 	else
 		pass "bridge: graph-go doesn't list itself"
 	fi
 
 	step "image: attached to ggsmoke-a_default"
-	run_image /tmp/ggsmoke-network.json --network ggsmoke-a_default
-	check_graph network /tmp/ggsmoke-network.json ggsmoke-a.pg ggsmoke-a.cache ggsmoke-b.cache
+	run_image "$OUT/network.json" --network ggsmoke-a_default
+	check_graph network "$OUT/network.json" ggsmoke-a.pg ggsmoke-a.cache ggsmoke-b.cache
 fi
 
 step "result"
