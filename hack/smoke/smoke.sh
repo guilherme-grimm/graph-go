@@ -122,7 +122,7 @@ if [[ "$(uname -s)" == Linux ]]; then
 else
 	check_graph host "$OUT/host.json" ggsmoke-a.cache ggsmoke-b.cache
 fi
-check_unique_ids host /tmp/ggsmoke-host.json
+check_unique_ids host "$OUT/host.json"
 
 step "host: graph-go mcp"
 coproc MCP { "$BIN" mcp --log-level=error; }
