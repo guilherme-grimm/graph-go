@@ -18,6 +18,12 @@ services:
 
   cache:
     image: redis:7-alpine
+    # Published on all interfaces, so require a password; graph-go picks it
+    # up from REDIS_PASSWORD, and redis-cli from REDISCLI_AUTH.
+    command: ["redis-server", "--requirepass", "smoke"]
+    environment:
+      REDIS_PASSWORD: smoke
+      REDISCLI_AUTH: smoke
     ports:
       - "6379"
     healthcheck:
