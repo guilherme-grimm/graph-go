@@ -40,9 +40,10 @@ func startupReport(res syncResult, g *graph.Graph) []reportLine {
 			f = &found{counts: map[string]int{}}
 			byAdapter[name] = f
 		}
-		// The adapter's own node: "service-<name>" from the registry, or
-		// "<name>" for HTTP adapters, which build their top-level node.
-		if n.Id == "service-"+name || n.Id == name {
+		// The adapter's own node is its only parentless one: the registry's
+		// "service-<name>", or the top-level node an HTTP adapter builds. Its
+		// ID may have been qualified, so the ID can't identify it.
+		if n.Parent == "" {
 			f.errMsg, _ = n.Metadata["error"].(string)
 			continue
 		}

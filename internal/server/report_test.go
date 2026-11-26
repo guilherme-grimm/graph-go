@@ -13,6 +13,7 @@ import (
 
 	"github.com/guilherme-grimm/graph-go/internal/adapters"
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
+	"github.com/guilherme-grimm/graph-go/internal/graph"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
 )
@@ -94,6 +95,18 @@ func TestStartupReportMixedRegistry(t *testing.T) {
 
 	// Columns line up: every adapter row has its type at the same offset.
 	assert.Equal(t, strings.Index(lines[1], "s3"), strings.Index(lines[4], "postgres"), "type column misaligned:\n%s", report)
+}
+
+func TestStartupReportQualifiedHTTPNodeIsTheAdapter(t *testing.T) {
+	res := syncResult{adapters: []adapterResult{{name: "pg-shop", connType: "http"}}}
+	g := &graph.Graph{Nodes: []nodes.Node{
+		{Id: "pg-shop@pg-shop", Type: "service", Metadata: map[string]any{"adapter": "pg-shop"}},
+	}}
+
+	lines := startupReport(res, g)
+	require.Len(t, lines, 1)
+	assert.True(t, lines[0].ok)
+	assert.Equal(t, "connected", lines[0].stat)
 }
 
 func TestStartupReportEmptyIsQuiet(t *testing.T) {
